@@ -1,13 +1,15 @@
 # Python
 __pycache__/
 *.pyc
-*.pkl
 .env
 venv/
 .venv/
 
-# Data — never commit raw data to git
+# Data — never commit raw data
 backend/data/
+
+# Models — can be large, regenerate from notebook
+models/
 
 # Jupyter
 .ipynb_checkpoints/
