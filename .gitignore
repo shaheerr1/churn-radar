@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pkl
+.env
+venv/
+.venv/
+
+# Data — never commit raw data to git
+backend/data/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Node
+node_modules/
+.env.local
