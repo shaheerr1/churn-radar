@@ -2,18 +2,15 @@ export default function CTA() {
   return (
     <section
       style={{
+        minHeight: "100vh",
         display: "flex",
         flexDirection: "column",
         justifyContent: "center",
-
+        padding: "6rem 4rem",
         position: "relative",
-
-        padding: "clamp(2rem, 5vh, 5rem) clamp(1.5rem, 4vw, 4rem)",
-        height: "100vh",
         overflow: "hidden",
       }}
     >
-      {/* background glows */}
       <div
         style={{
           position: "absolute",
@@ -24,18 +21,6 @@ export default function CTA() {
           height: 800,
           background:
             "radial-gradient(circle, rgba(255,59,59,0.06) 0%, transparent 65%)",
-          zIndex: 0,
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          bottom: "10%",
-          right: "5%",
-          width: 400,
-          height: 400,
-          background:
-            "radial-gradient(circle, rgba(0,212,255,0.04) 0%, transparent 70%)",
           zIndex: 0,
         }}
       />
@@ -54,16 +39,16 @@ export default function CTA() {
           style={{
             background: "var(--bg-card)",
             border: "1px solid var(--bg-border)",
-            borderRadius: 24,
+            borderRadius: 20,
             overflow: "hidden",
-            marginBottom: 16,
+            marginBottom: 12,
           }}
         >
           {/* top bar */}
           <div
             style={{
               background: "var(--red)",
-              padding: "0.6rem 2rem",
+              padding: "0.5rem 1.5rem",
               display: "flex",
               alignItems: "center",
               gap: 8,
@@ -80,7 +65,7 @@ export default function CTA() {
             <span
               style={{
                 fontFamily: "var(--font-mono)",
-                fontSize: 12,
+                fontSize: 11,
                 color: "rgba(255,255,255,0.8)",
               }}
             >
@@ -90,40 +75,38 @@ export default function CTA() {
 
           <div
             style={{
-              padding: "4rem",
+              padding: "2.5rem 3rem",
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
-              gap: "4rem",
+              gap: "3rem",
               alignItems: "center",
             }}
           >
-            {/* left — headline */}
+            {/* left */}
             <div>
               <h2
                 style={{
-                  fontSize: "clamp(1.6rem, 2.8vw, 3.2rem)",
+                  fontSize: "clamp(1.6rem, 2.5vw, 2.6rem)",
                   fontWeight: 800,
                   letterSpacing: "-0.03em",
-                  lineHeight: 1.1,
-                  marginBottom: "1.5rem",
+                  lineHeight: 1.15,
+                  marginBottom: "1rem",
                 }}
               >
-                Every week you wait,
-                <br />
+                Every week you wait,{" "}
                 <span style={{ color: "var(--red)" }}>
                   more customers leave
-                </span>
-                <br />
+                </span>{" "}
                 without warning.
               </h2>
 
               <p
                 style={{
-                  fontSize: 16,
+                  fontSize: 14,
                   color: "var(--text-secondary)",
-                  lineHeight: 1.8,
-                  marginBottom: "2.5rem",
-                  maxWidth: 440,
+                  lineHeight: 1.7,
+                  marginBottom: "1.5rem",
+                  maxWidth: 420,
                 }}
               >
                 ChurnRadar is built and validated on real data. The model is
@@ -135,8 +118,8 @@ export default function CTA() {
                 style={{
                   display: "flex",
                   flexDirection: "column",
-                  gap: 12,
-                  marginBottom: "2.5rem",
+                  gap: 10,
+                  marginBottom: "1.75rem",
                 }}
               >
                 {[
@@ -155,15 +138,15 @@ export default function CTA() {
                   >
                     <div
                       style={{
-                        width: 18,
-                        height: 18,
+                        width: 16,
+                        height: 16,
                         borderRadius: "50%",
                         background: "var(--red-dim)",
                         border: "1px solid #ff3b3b44",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        fontSize: 10,
+                        fontSize: 9,
                         color: "var(--red)",
                         flexShrink: 0,
                       }}
@@ -172,7 +155,7 @@ export default function CTA() {
                     </div>
                     <span
                       style={{
-                        fontSize: 14,
+                        fontSize: 13,
                         color: "var(--text-secondary)",
                       }}
                     >
@@ -185,12 +168,12 @@ export default function CTA() {
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <button
                   style={{
-                    padding: "14px 32px",
+                    padding: "12px 28px",
                     background: "var(--red)",
                     border: "none",
                     borderRadius: 10,
                     color: "#fff",
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: 700,
                     cursor: "pointer",
                     fontFamily: "var(--font-display)",
@@ -210,12 +193,12 @@ export default function CTA() {
 
                 <button
                   style={{
-                    padding: "14px 32px",
+                    padding: "12px 28px",
                     background: "transparent",
                     border: "1px solid var(--bg-border)",
                     borderRadius: 10,
                     color: "var(--text-secondary)",
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: 600,
                     cursor: "pointer",
                     fontFamily: "var(--font-display)",
@@ -235,31 +218,31 @@ export default function CTA() {
               </div>
             </div>
 
-            {/* right — terminal style stats */}
+            {/* right — terminal */}
             <div
               style={{
                 background: "var(--bg)",
                 border: "1px solid var(--bg-border)",
-                borderRadius: 16,
+                borderRadius: 14,
                 overflow: "hidden",
                 fontFamily: "var(--font-mono)",
               }}
             >
               <div
                 style={{
-                  padding: "0.75rem 1.25rem",
+                  padding: "0.6rem 1rem",
                   borderBottom: "1px solid var(--bg-border)",
                   display: "flex",
                   alignItems: "center",
-                  gap: 8,
+                  gap: 6,
                 }}
               >
                 {["#ff5f56", "#ffbd2e", "#27c93f"].map((c) => (
                   <div
                     key={c}
                     style={{
-                      width: 10,
-                      height: 10,
+                      width: 9,
+                      height: 9,
                       borderRadius: "50%",
                       background: c,
                     }}
@@ -267,16 +250,22 @@ export default function CTA() {
                 ))}
                 <span
                   style={{
-                    fontSize: 12,
+                    fontSize: 11,
                     color: "var(--text-muted)",
-                    marginLeft: 8,
+                    marginLeft: 6,
                   }}
                 >
                   model_summary.json
                 </span>
               </div>
 
-              <div style={{ padding: "1.5rem", fontSize: 13, lineHeight: 2 }}>
+              <div
+                style={{
+                  padding: "1.25rem 1.5rem",
+                  fontSize: 12,
+                  lineHeight: 1.9,
+                }}
+              >
                 {[
                   {
                     key: "model",
@@ -305,7 +294,7 @@ export default function CTA() {
                     color: "#30d158",
                   },
                 ].map((row) => (
-                  <div key={row.key} style={{ display: "flex", gap: 8 }}>
+                  <div key={row.key} style={{ display: "flex", gap: 6 }}>
                     <span style={{ color: "var(--text-muted)" }}>"</span>
                     <span style={{ color: "var(--text-secondary)" }}>
                       {row.key}
@@ -319,16 +308,16 @@ export default function CTA() {
           </div>
         </div>
 
-        {/* bottom footer strip */}
+        {/* footer strip */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "1.5rem 2rem",
+            padding: "1.25rem 2rem",
             background: "var(--bg-card)",
             border: "1px solid var(--bg-border)",
-            borderRadius: 16,
+            borderRadius: 14,
             flexWrap: "wrap",
             gap: "1rem",
           }}
@@ -336,22 +325,22 @@ export default function CTA() {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
+                width: 26,
+                height: 26,
+                borderRadius: 7,
                 background: "var(--red)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 fontFamily: "var(--font-mono)",
                 fontWeight: 700,
-                fontSize: 13,
+                fontSize: 12,
                 color: "#fff",
               }}
             >
               C
             </div>
-            <span style={{ fontWeight: 700, fontSize: 16 }}>
+            <span style={{ fontWeight: 700, fontSize: 15 }}>
               Churn<span style={{ color: "var(--red)" }}>Radar</span>
             </span>
           </div>
@@ -361,7 +350,7 @@ export default function CTA() {
               display: "flex",
               gap: "2rem",
               fontFamily: "var(--font-mono)",
-              fontSize: 12,
+              fontSize: 11,
               color: "var(--text-muted)",
             }}
           >
@@ -377,7 +366,7 @@ export default function CTA() {
           <div
             style={{
               fontFamily: "var(--font-mono)",
-              fontSize: 12,
+              fontSize: 11,
               color: "var(--text-muted)",
             }}
           >
