@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 const CUSTOMERS = [
   {
@@ -329,6 +330,7 @@ export default function Hero() {
   // visibleCount: how many rows are currently faded in (0–5)
   const [visibleCount, setVisibleCount] = useState(0);
   const [count, setCount] = useState(0);
+  const navigate = useNavigate();
 
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
@@ -438,8 +440,18 @@ export default function Hero() {
             </p>
 
             <div className="hero-btns">
-              <button className="hero-btn-primary">See it live →</button>
-              <button className="hero-btn-secondary">View dashboard</button>
+              <button
+                className="hero-btn-primary"
+                onClick={() => navigate("/dashboard")}
+              >
+                See it live →
+              </button>
+              <button
+                className="hero-btn-secondary"
+                onClick={() => navigate("/dashboard")}
+              >
+                View dashboard
+              </button>
             </div>
 
             <div className="hero-stats">
