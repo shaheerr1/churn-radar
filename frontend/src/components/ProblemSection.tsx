@@ -11,13 +11,9 @@ function StatCard({
 }) {
   return (
     <div
+      className="ps-stat-card"
       style={{
-        background: "var(--bg-card)",
         border: `1px solid ${danger ? "#ff3b3b33" : "var(--bg-border)"}`,
-        borderRadius: 16,
-        padding: "2rem 2.5rem",
-        position: "relative",
-        overflow: "hidden",
       }}
     >
       {danger && (
@@ -33,241 +29,284 @@ function StatCard({
         />
       )}
       <div
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: "clamp(1.6rem, 3vw, 2.4rem)",
-          fontWeight: 700,
-          color: danger ? "var(--red)" : "var(--text-primary)",
-          letterSpacing: "-0.02em",
-          lineHeight: 1,
-          marginBottom: "0.75rem",
-        }}
+        className="ps-stat-value"
+        style={{ color: danger ? "var(--red)" : "var(--text-primary)" }}
       >
         {value}
       </div>
-      <div
-        style={{
-          fontSize: 15,
-          fontWeight: 600,
-          color: "var(--text-primary)",
-          marginBottom: 6,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: 13,
-          color: "var(--text-secondary)",
-          lineHeight: 1.6,
-        }}
-      >
-        {sub}
-      </div>
+      <div className="ps-stat-label">{label}</div>
+      <div className="ps-stat-sub">{sub}</div>
     </div>
   );
 }
 
+const styles = `
+  .ps-section {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: clamp(1.5rem, 3vw, 4rem) clamp(1rem, 5vw, 4rem);
+    position: relative;
+  }
+
+  .ps-header {
+    text-align: center;
+    margin-bottom: clamp(1.25rem, 2.5vw, 2.5rem);
+  }
+
+  .ps-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: clamp(3px, 0.6vw, 6px) clamp(8px, 1.2vw, 14px);
+    background: var(--red-dim);
+    border: 1px solid #ff3b3b44;
+    border-radius: 999px;
+    margin-bottom: clamp(0.5rem, 1vw, 1rem);
+  }
+
+  .ps-badge span {
+    font-family: var(--font-mono);
+    font-size: clamp(10px, 1.1vw, 12px);
+    color: var(--red);
+  }
+
+  .ps-title {
+    font-size: clamp(1.4rem, 3.2vw, 3rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin-bottom: clamp(0.5rem, 1vw, 1rem);
+  }
+
+  .ps-subtitle {
+    font-size: clamp(13px, 1.3vw, 16px);
+    color: var(--text-secondary);
+    max-width: 520px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  /* Stat cards */
+  .ps-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: clamp(6px, 1vw, 14px);
+    margin-bottom: clamp(0.75rem, 1.5vw, 1.5rem);
+  }
+
+  .ps-stat-card {
+    background: var(--bg-card);
+    border-radius: clamp(10px, 1.2vw, 14px);
+    padding: clamp(0.75rem, 1.5vw, 1.5rem) clamp(0.75rem, 1.5vw, 1.75rem);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .ps-stat-value {
+    font-family: var(--font-mono);
+    font-size: clamp(1.1rem, 2vw, 1.9rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    margin-bottom: clamp(0.3rem, 0.6vw, 0.6rem);
+  }
+
+  .ps-stat-label {
+    font-size: clamp(11px, 1.1vw, 14px);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: clamp(2px, 0.4vw, 5px);
+  }
+
+  .ps-stat-sub {
+    font-size: clamp(10px, 1vw, 12px);
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  /* Insight box */
+  .ps-insight {
+    background: var(--bg-card);
+    border: 1px solid var(--bg-border);
+    border-radius: clamp(10px, 1.2vw, 14px);
+    padding: clamp(1rem, 2vw, 2rem) clamp(1rem, 2vw, 2rem);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: clamp(1.25rem, 2.5vw, 2.5rem);
+    align-items: center;
+  }
+
+  .ps-insight h3 {
+    font-size: clamp(1.1rem, 1.8vw, 1.6rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: clamp(0.4rem, 0.8vw, 0.75rem);
+    line-height: 1.2;
+  }
+
+  .ps-insight p {
+    color: var(--text-secondary);
+    line-height: 1.7;
+    font-size: clamp(12px, 1.1vw, 14px);
+  }
+
+  .ps-signals {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(8px, 1vw, 12px);
+  }
+
+  .ps-signal-label {
+    font-size: clamp(10px, 1vw, 12px);
+    color: var(--text-secondary);
+    margin-bottom: clamp(3px, 0.5vw, 5px);
+  }
+
+  .ps-signal-pct {
+    font-family: var(--font-mono);
+    font-size: clamp(10px, 1vw, 12px);
+    color: var(--text-muted);
+    min-width: 30px;
+  }
+
+  /* Tablet: 2x2 stat grid */
+  @media (max-width: 900px) {
+    .ps-stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  /* Mobile */
+  @media (max-width: 600px) {
+    .ps-stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .ps-insight {
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+    .ps-title br { display: none; }
+  }
+
+  @media (max-width: 400px) {
+    .ps-stats-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+`;
+
 export default function ProblemSection() {
   return (
-    <section
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        padding: "8rem 4rem",
-      }}
-    >
-      <div style={{ maxWidth: 1200, margin: "0 auto", width: "100%" }}>
-        <div style={{ textAlign: "center", marginBottom: "4rem" }}>
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "6px 14px",
-              background: "var(--red-dim)",
-              border: "1px solid #ff3b3b44",
-              borderRadius: 999,
-              marginBottom: "1.5rem",
-            }}
-          >
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                color: "var(--red)",
-              }}
-            >
-              the problem
-            </span>
-          </div>
-
-          <h2
-            style={{
-              fontSize: "clamp(2rem, 4vw, 3.5rem)",
-              fontWeight: 800,
-              letterSpacing: "-0.03em",
-              lineHeight: 1.1,
-              marginBottom: "1.5rem",
-            }}
-          >
-            Your customers are leaving.
-            <br />
-            <span style={{ color: "var(--red)" }}>You find out too late.</span>
-          </h2>
-
-          <p
-            style={{
-              fontSize: 18,
-              color: "var(--text-secondary)",
-              maxWidth: 560,
-              margin: "0 auto",
-              lineHeight: 1.7,
-            }}
-          >
-            By the time a customer cancels, they made that decision weeks ago.
-            Every day without visibility is revenue permanently lost.
-          </p>
-        </div>
-
-        {/* stat cards */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: 16,
-            marginBottom: "2.5rem",
-          }}
-        >
-          <StatCard
-            value="£1,453,294"
-            label="Annual revenue lost to churn"
-            sub="Based on 1,869 churned customers at £64.80 average monthly charge"
-            danger
-          />
-          <StatCard
-            value="26.6%"
-            label="Of all customers churn every year"
-            sub="Nearly 1 in 4 customers will leave — most without any warning signal"
-            danger
-          />
-          <StatCard
-            value="42.7%"
-            label="Month-to-month churn rate"
-            sub="Customers on flexible contracts churn at 15x the rate of annual customers"
-            danger
-          />
-          <StatCard
-            value="3 weeks"
-            label="Average lead time before cancel"
-            sub="Customers show behavioural signals weeks before they actually leave"
-          />
-        </div>
-
-        {/* the insight */}
-        <div
-          style={{
-            background: "var(--bg-card)",
-            border: "1px solid var(--bg-border)",
-            borderRadius: 16,
-            padding: "3rem",
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "3rem",
-            alignItems: "center",
-          }}
-        >
-          <div>
-            <h3
-              style={{
-                fontSize: 28,
-                fontWeight: 700,
-                letterSpacing: "-0.02em",
-                marginBottom: "1rem",
-              }}
-            >
-              The signals are there.
-              <br />
-              <span style={{ color: "var(--cyan)" }}>
-                You're just not reading them.
+    <>
+      <style>{styles}</style>
+      <section className="ps-section">
+        <div style={{ maxWidth: 1200, margin: "0 auto", width: "100%" }}>
+          {/* Header */}
+          <div className="ps-header">
+            <div className="ps-badge">
+              <span>the problem</span>
+            </div>
+            <h2 className="ps-title">
+              Your customers are leaving. <br />
+              <span style={{ color: "var(--red)" }}>
+                You find out too late.
               </span>
-            </h3>
-            <p
-              style={{
-                color: "var(--text-secondary)",
-                lineHeight: 1.8,
-                fontSize: 15,
-              }}
-            >
-              Before a customer cancels they stop logging in as often, raise
-              more support tickets, fail payments, and remove team members.
-              These patterns are predictable. They just need a model to catch
-              them.
+            </h2>
+            <p className="ps-subtitle">
+              By the time a customer cancels, they made that decision weeks ago.
+              Every day without visibility is revenue permanently lost.
             </p>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {[
-              { signal: "Login frequency drops below threshold", weight: 92 },
-              { signal: "Support tickets spike in 30 days", weight: 78 },
-              { signal: "Month-to-month + high charges combo", weight: 97 },
-              { signal: "New customer in first 90 days", weight: 85 },
-              { signal: "No add-on services active", weight: 63 },
-            ].map((s) => (
-              <div
-                key={s.signal}
-                style={{ display: "flex", alignItems: "center", gap: 12 }}
-              >
-                <div style={{ flex: 1 }}>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: "var(--text-secondary)",
-                      marginBottom: 6,
-                    }}
-                  >
-                    {s.signal}
-                  </div>
-                  <div
-                    style={{
-                      height: 4,
-                      background: "#1e1e2e",
-                      borderRadius: 4,
-                    }}
-                  >
+          {/* Stat Cards */}
+          <div className="ps-stats-grid">
+            <StatCard
+              value="£1,453,294"
+              label="Annual revenue lost to churn"
+              sub="Based on 1,869 churned customers at £64.80 average monthly charge"
+              danger
+            />
+            <StatCard
+              value="26.6%"
+              label="Of all customers churn every year"
+              sub="Nearly 1 in 4 customers will leave — most without any warning signal"
+              danger
+            />
+            <StatCard
+              value="42.7%"
+              label="Month-to-month churn rate"
+              sub="Customers on flexible contracts churn at 15x the rate of annual customers"
+              danger
+            />
+            <StatCard
+              value="3 weeks"
+              label="Average lead time before cancel"
+              sub="Customers show behavioural signals weeks before they actually leave"
+            />
+          </div>
+
+          {/* Insight */}
+          <div className="ps-insight">
+            <div>
+              <h3>
+                The signals are there. <br />
+                <span style={{ color: "var(--cyan)" }}>
+                  You're just not reading them.
+                </span>
+              </h3>
+              <p>
+                Before a customer cancels they stop logging in as often, raise
+                more support tickets, fail payments, and remove team members.
+                These patterns are predictable. They just need a model to catch
+                them.
+              </p>
+            </div>
+
+            <div className="ps-signals">
+              {[
+                { signal: "Login frequency drops below threshold", weight: 92 },
+                { signal: "Support tickets spike in 30 days", weight: 78 },
+                { signal: "Month-to-month + high charges combo", weight: 97 },
+                { signal: "New customer in first 90 days", weight: 85 },
+                { signal: "No add-on services active", weight: 63 },
+              ].map((s) => (
+                <div
+                  key={s.signal}
+                  style={{ display: "flex", alignItems: "center", gap: 10 }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <div className="ps-signal-label">{s.signal}</div>
                     <div
                       style={{
                         height: 4,
+                        background: "#1e1e2e",
                         borderRadius: 4,
-                        width: `${s.weight}%`,
-                        background:
-                          s.weight > 85
-                            ? "var(--red)"
-                            : s.weight > 70
-                              ? "#ff9500"
-                              : "var(--cyan)",
-                        transition: "width 1s ease",
                       }}
-                    />
+                    >
+                      <div
+                        style={{
+                          height: 4,
+                          borderRadius: 4,
+                          width: `${s.weight}%`,
+                          background:
+                            s.weight > 85
+                              ? "var(--red)"
+                              : s.weight > 70
+                                ? "#ff9500"
+                                : "var(--cyan)",
+                          transition: "width 1s ease",
+                        }}
+                      />
+                    </div>
                   </div>
+                  <span className="ps-signal-pct">{s.weight}%</span>
                 </div>
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    color: "var(--text-muted)",
-                    minWidth: 32,
-                  }}
-                >
-                  {s.weight}%
-                </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </>
   );
 }
