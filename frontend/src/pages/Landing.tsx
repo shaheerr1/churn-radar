@@ -2,7 +2,7 @@ import Navbar from "../components/Navbar";
 import Hero from "../components/Hero";
 import ProblemSection from "../components/ProblemSection";
 import HowItWorks from "../components/HowItWorks";
-// import SocialProof from "../components/SocialProof";
+import SocialProof from "../components/SocialProof";
 // import CTA from "../components/CTA";
 
 export default function Landing() {
@@ -12,7 +12,7 @@ export default function Landing() {
       <Hero />
       <ProblemSection />
       <HowItWorks />
-      {/* <SocialProof /> */}
+      <SocialProof />
       {/* <CTA /> */}
     </main>
   );
