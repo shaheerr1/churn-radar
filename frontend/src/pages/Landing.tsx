@@ -3,7 +3,7 @@ import Hero from "../components/Hero";
 import ProblemSection from "../components/ProblemSection";
 import HowItWorks from "../components/HowItWorks";
 import SocialProof from "../components/SocialProof";
-// import CTA from "../components/CTA";
+import CTA from "../components/CTA";
 
 export default function Landing() {
   return (
@@ -13,7 +13,7 @@ export default function Landing() {
       <ProblemSection />
       <HowItWorks />
       <SocialProof />
-      {/* <CTA /> */}
+      <CTA />
     </main>
   );
 }
