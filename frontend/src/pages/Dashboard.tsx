@@ -5,7 +5,6 @@
  *   Tab 0 "Overview"         → /summary, /trend, /features, /stream
  *   Tab 1 "Customer search"  → /customers?limit=50
  *   Tab 2 "Predict customer" → POST /predict
- *
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -19,7 +18,6 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-// ─── API base — change this if your backend runs on a different port ────────
 const API = "http://localhost:8000";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -30,13 +28,13 @@ interface ShapReason {
   feature: string;
   value: number;
   shap_impact: number;
-  direction: string; // "increases risk" | "decreases risk"
+  direction: string;
 }
 
 interface Customer {
   customer_id: string;
-  churn_probability: number; // 0–1 float
-  risk_level: string; // "critical" | "high" | "medium" | "low"
+  churn_probability: number;
+  risk_level: string;
   monthly_charges: number;
   tenure: number;
   contract: string;
@@ -64,7 +62,7 @@ interface Feature {
   importance: number;
 }
 
-// ─── Colour helpers ─────────────────────────────────────────────────────────
+// ─── Helpers ────────────────────────────────────────────────────────────────
 const RISK_COLOR: Record<string, string> = {
   critical: "#ff3b3b",
   high: "#ff6b35",
@@ -80,7 +78,6 @@ const gbp = (n: number) =>
     maximumFractionDigits: 0,
   }).format(n);
 
-// ─── Recharts tooltip style (can't use CSS vars inside canvas) ───────────────
 const TT_STYLE = {
   contentStyle: {
     background: "#111",
@@ -95,27 +92,17 @@ const TT_STYLE = {
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// STYLES — all scoped under .db prefix to avoid clashing with landing page
+// STYLES
 // ════════════════════════════════════════════════════════════════════════════
 const STYLES = `
   @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:.3} }
   @keyframes ping   { 0%{transform:scale(1);opacity:.8} 100%{transform:scale(2.4);opacity:0} }
   @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-  @keyframes shimmer{
-    0%{background-position:-400px 0}
-    100%{background-position:400px 0}
-  }
+  @keyframes shimmer{ 0%{background-position:-400px 0} 100%{background-position:400px 0} }
+  @keyframes modalIn{ from{opacity:0;transform:scale(.96) translateY(8px)} to{opacity:1;transform:scale(1) translateY(0)} }
 
-  /* ── root container */
-  .db{
-    padding: clamp(1rem,2vw,1.5rem) clamp(1rem,3vw,2rem);
-    min-height: 100vh;
-    background: var(--bg, #0a0a0f);
-    color: var(--text-primary, #f0f0f0);
-    font-family: var(--font-display, system-ui, sans-serif);
-  }
+  .db{ padding:clamp(1rem,2vw,1.5rem) clamp(1rem,3vw,2rem); min-height:100vh; background:var(--bg,#0a0a0f); color:var(--text-primary,#f0f0f0); font-family:var(--font-display,system-ui,sans-serif) }
 
-  /* ── top header bar */
   .db-hdr{ display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:8px }
   .db-hdr-l{ display:flex; align-items:center; gap:10px }
   .db-title{ font-size:clamp(13px,1.5vw,15px); font-weight:800; letter-spacing:-0.03em }
@@ -125,78 +112,73 @@ const STYLES = `
   .db-time { font-family:var(--font-mono,monospace); font-size:10px; color:var(--text-muted,#555) }
   .db-stream-badge{ font-family:var(--font-mono,monospace); font-size:10px; padding:2px 9px; border-radius:999px }
 
-  /* ── tab switcher */
   .db-tabs{ display:flex; gap:4px; margin-bottom:1rem; background:var(--bg-card,#111); border:1px solid var(--bg-border,#1e1e2e); border-radius:10px; padding:4px; width:fit-content }
   .db-tab { padding:6px 18px; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer; border:none; background:transparent; color:var(--text-muted,#555); transition:all .2s; white-space:nowrap; font-family:inherit }
   .db-tab.on{ background:var(--bg-border,#1e1e2e); color:var(--text-primary,#f0f0f0) }
   .db-tab:hover:not(.on){ color:var(--text-secondary,#aaa) }
 
-  /* ── metric cards grid (auto-fit so it works at any width) */
-  .db-metrics{
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(clamp(130px,18vw,190px), 1fr));
-    gap: 10px;
-    margin-bottom: 10px;
-  }
+  .db-metrics{ display:grid; grid-template-columns:repeat(auto-fit,minmax(clamp(130px,18vw,190px),1fr)); gap:10px; margin-bottom:10px }
   .db-mc{ background:var(--bg-card,#111); border:1px solid var(--bg-border,#1e1e2e); border-radius:12px; padding:clamp(.7rem,1.5vw,1.1rem) clamp(.7rem,1.5vw,1.25rem); position:relative; overflow:hidden; animation:fadeUp .5s ease both }
   .db-mc-bar{ position:absolute; top:0; left:0; right:0; height:2px }
   .db-mc-val{ font-family:var(--font-mono,monospace); font-size:clamp(1.1rem,2.5vw,1.8rem); font-weight:700; letter-spacing:-.02em; line-height:1; margin-bottom:5px }
   .db-mc-lbl{ font-size:clamp(11px,1.1vw,13px); font-weight:600; margin-bottom:2px }
   .db-mc-sub{ font-size:clamp(10px,.9vw,11px); color:var(--text-muted,#555); line-height:1.4 }
-
-  /* shimmer skeleton shown while data is loading */
   .db-skel{ height:1.8rem; width:80px; border-radius:6px; background:linear-gradient(90deg,var(--bg-border,#1e1e2e) 25%,#2a2a3a 50%,var(--bg-border,#1e1e2e) 75%); background-size:400px 100%; animation:shimmer 1.4s infinite; margin-bottom:5px }
 
-  /* ── generic panel (card wrapper) */
   .db-panel{ background:var(--bg-card,#111); border:1px solid var(--bg-border,#1e1e2e); border-radius:12px; overflow:hidden; margin-bottom:10px }
   .db-ph  { padding:clamp(.55rem,.9vw,.8rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px }
   .db-pt  { font-size:clamp(11px,1.1vw,13px); font-weight:700; letter-spacing:-.01em }
   .db-ps  { font-family:var(--font-mono,monospace); font-size:clamp(9px,.9vw,11px); color:var(--text-muted,#555) }
 
-  /* ── 2-column layout used for charts + feed/queue rows */
   .db-2col{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px }
   @media(max-width:860px){ .db-2col{ grid-template-columns:1fr } }
 
-  /* ── SHAP horizontal bars */
   .db-shap-row{ padding:clamp(.35rem,.7vw,.5rem) clamp(.75rem,1.2vw,1.1rem); display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--bg-border,#1e1e2e) }
   .db-shap-row:last-child{ border-bottom:none }
   .db-shap-lbl{ font-size:clamp(10px,1vw,12px); color:var(--text-secondary,#ccc); width:clamp(120px,14vw,160px); flex-shrink:0 }
   .db-shap-bg { flex:1; height:5px; background:var(--bg-border,#1e1e2e); border-radius:4px }
   .db-shap-val{ font-family:var(--font-mono,monospace); font-size:11px; color:var(--text-muted,#555); width:32px; text-align:right; flex-shrink:0 }
 
-  /* ── live stream feed rows */
   .db-feed-row{ padding:clamp(.45rem,.8vw,.65rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); display:flex; align-items:center; justify-content:space-between; gap:8px; position:relative; transition:opacity .45s ease,transform .45s cubic-bezier(.22,1,.36,1) }
   .db-feed-row:last-child{ border-bottom:none }
   .db-feed-id { font-family:var(--font-mono,monospace); font-size:clamp(11px,1vw,12px); font-weight:600 }
   .db-feed-sub{ font-family:var(--font-mono,monospace); font-size:clamp(9px,.9vw,10px); color:var(--text-muted,#555); margin-top:2px }
-
-  /* green ping dot shown on the newest row */
   .db-ping{ position:absolute; top:50%; right:clamp(.75rem,1.2vw,1.1rem); transform:translateY(-50%); width:6px; height:6px; border-radius:50%; background:#30d158; animation:ping 1.1s ease-out }
   .db-ftr { padding:clamp(.4rem,.7vw,.55rem) clamp(.75rem,1.2vw,1.1rem); display:flex; align-items:center; gap:8px; border-top:1px solid var(--bg-border,#1e1e2e) }
   .db-ftr span{ font-family:var(--font-mono,monospace); font-size:clamp(9px,.9vw,10px); color:var(--text-muted,#555) }
 
-  /* ── risk badge used in feed, table, predict result */
   .rb{ font-family:var(--font-mono,monospace); font-size:clamp(9px,.9vw,10px); font-weight:600; padding:2px 7px; border-radius:4px; white-space:nowrap; text-transform:uppercase; letter-spacing:.04em }
 
-  /* ── priority queue rows */
-  .db-pq-row   { padding:clamp(.45rem,.8vw,.65rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); animation:fadeUp .4s ease both }
-  .db-pq-row:last-child{ border-bottom:none }
-  .db-pq-top   { display:flex; align-items:center; justify-content:space-between; margin-bottom:3px }
-  .db-pq-id    { font-family:var(--font-mono,monospace); font-size:clamp(11px,1vw,12px); font-weight:600 }
-  .db-pq-reason{ font-size:clamp(10px,.9vw,11px); color:var(--text-muted,#555); margin-bottom:3px; line-height:1.45 }
-  .db-pq-rec   { font-family:var(--font-mono,monospace); font-size:clamp(9px,.9vw,10px); color:#0af; line-height:1.4 }
-
-  /* ── generic empty/loading state */
   .db-empty{ padding:2rem; text-align:center; font-family:var(--font-mono,monospace); font-size:11px; color:var(--text-muted,#555) }
 
-  /* ── customer search tab: search bar + filters */
+  /* ── Priority table ── */
+  .pq-table{ width:100%; border-collapse:collapse; font-size:clamp(10px,.9vw,12px) }
+  .pq-table th{ font-family:var(--font-mono,monospace); font-size:clamp(9px,.8vw,10px); color:#555; text-transform:uppercase; letter-spacing:.08em; text-align:left; font-weight:400; padding:clamp(.4rem,.7vw,.55rem) clamp(.5rem,1vw,.85rem); border-bottom:1px solid #1e1e2e; white-space:nowrap; position:sticky; top:0; background:var(--bg-card,#111); z-index:1 }
+  .pq-table td{ padding:clamp(.45rem,.8vw,.6rem) clamp(.5rem,1vw,.85rem); border-bottom:1px solid #1e1e2e; white-space:nowrap; vertical-align:middle }
+  .pq-table tr:last-child td{ border-bottom:none }
+  .pq-table tbody tr{ cursor:pointer; transition:background .15s }
+  .pq-table tbody tr:hover td{ background:rgba(255,255,255,.04) }
+
+  /* ── Modal ── */
+  .modal-overlay{ position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.75); display:flex; align-items:center; justify-content:center; padding:1rem }
+  .modal-box{ background:#111; border:1px solid #2a2a3a; border-radius:16px; width:100%; max-width:500px; max-height:85vh; overflow-y:auto; box-shadow:0 24px 80px rgba(0,0,0,0.7); animation:modalIn .2s ease both }
+  .modal-hdr{ padding:1rem 1.25rem; border-bottom:1px solid #1e1e2e; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; background:#111; z-index:1 }
+  .modal-close{ background:#1e1e2e; border:1px solid #2a2a3a; border-radius:6px; color:#888; cursor:pointer; padding:4px 10px; font-family:var(--font-mono,monospace); font-size:12px; transition:color .15s }
+  .modal-close:hover{ color:#f0f0f0 }
+  .modal-section{ padding:1rem 1.25rem; border-bottom:1px solid #1e1e2e }
+  .modal-section:last-child{ border-bottom:none }
+  .modal-section-title{ font-family:var(--font-mono,monospace); font-size:10px; color:#555; text-transform:uppercase; letter-spacing:.08em; margin-bottom:.6rem }
+  .modal-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px }
+  .modal-stat{ background:#0a0a0f; border:1px solid #1e1e2e; border-radius:8px; padding:8px 12px }
+  .modal-stat-label{ font-family:var(--font-mono,monospace); font-size:9px; color:#555; text-transform:uppercase; letter-spacing:.08em; margin-bottom:3px }
+  .modal-stat-value{ font-family:var(--font-mono,monospace); font-size:12px; font-weight:600; color:#f0f0f0 }
+
+  /* ── Search tab ── */
   .db-search-bar{ display:flex; align-items:center; gap:8px; padding:clamp(.6rem,1vw,.85rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); flex-wrap:wrap }
   .db-input { background:var(--bg,#0a0a0f); border:1px solid var(--bg-border,#1e1e2e); border-radius:7px; padding:6px 10px; color:var(--text-primary,#f0f0f0); font-family:var(--font-mono,monospace); font-size:12px; outline:none; transition:border-color .2s }
   .db-input:focus{ border-color:#333 }
   .db-input::placeholder{ color:var(--text-muted,#555) }
   .db-select{ background:var(--bg,#0a0a0f); border:1px solid var(--bg-border,#1e1e2e); border-radius:7px; padding:6px 10px; color:var(--text-secondary,#888); font-family:var(--font-mono,monospace); font-size:11px; outline:none; cursor:pointer }
-
-  /* ── customer table */
   .db-tbl-wrap{ overflow-x:auto }
   .db-tbl{ width:100%; border-collapse:collapse; font-size:clamp(10px,.9vw,12px) }
   .db-tbl th{ font-family:var(--font-mono,monospace); font-size:clamp(9px,.8vw,10px); color:var(--text-muted,#555); text-transform:uppercase; letter-spacing:.08em; text-align:left; padding:clamp(.4rem,.7vw,.55rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); white-space:nowrap; cursor:pointer; user-select:none }
@@ -208,16 +190,12 @@ const STYLES = `
   .db-tbl-mono{ font-family:var(--font-mono,monospace); color:var(--text-muted,#888) }
   .db-tbl-ftr { padding:clamp(.4rem,.7vw,.55rem) clamp(.75rem,1.2vw,1.1rem); display:flex; align-items:center; justify-content:space-between; border-top:1px solid var(--bg-border,#1e1e2e) }
   .db-tbl-ftr span{ font-family:var(--font-mono,monospace); font-size:10px; color:var(--text-muted,#555) }
-
-  /* inline bar inside table cells (SHAP driver column) */
   .db-bar-wrap{ display:flex; align-items:center; gap:6px }
   .db-bar-bg  { width:50px; height:4px; background:var(--bg-border,#1e1e2e); border-radius:4px; flex-shrink:0 }
-
-  /* pagination buttons */
   .db-pg-btn{ background:var(--bg-border,#1e1e2e); border:1px solid #2a2a3a; border-radius:5px; color:var(--text-muted,#888); font-family:var(--font-mono,monospace); font-size:10px; padding:3px 8px; cursor:pointer }
   .db-pg-btn:disabled{ opacity:.3; cursor:not-allowed }
 
-  /* ── predict tab: form grid */
+  /* ── Predict tab ── */
   .db-pred-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px }
   @media(max-width:860px){ .db-pred-grid{ grid-template-columns:1fr } }
   .db-field-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:1rem }
@@ -225,27 +203,19 @@ const STYLES = `
   .db-field-lbl{ font-size:11px; color:var(--text-muted,#666); font-family:var(--font-mono,monospace) }
   .db-field-input{ background:var(--bg,#0a0a0f); border:1px solid var(--bg-border,#1e1e2e); border-radius:7px; padding:6px 10px; color:var(--text-primary,#f0f0f0); font-family:var(--font-mono,monospace); font-size:12px; outline:none; width:100%; transition:border-color .2s }
   .db-field-input:focus{ border-color:#333 }
-
-  /* predict submit button */
   .db-pred-btn{ margin:0 1rem 1rem; padding:10px; background:var(--red,#ff3b3b); border:none; border-radius:8px; color:#fff; font-size:13px; font-weight:700; cursor:pointer; width:calc(100% - 2rem); transition:opacity .2s,transform .2s; font-family:inherit }
   .db-pred-btn:hover:not(:disabled){ opacity:.88; transform:translateY(-1px) }
   .db-pred-btn:disabled{ opacity:.4; cursor:not-allowed }
-
-  /* predict result panel */
   .db-result-box{ margin:0 1rem 1rem; background:var(--bg,#0a0a0f); border:1px solid var(--bg-border,#1e1e2e); border-radius:10px; padding:1rem }
   .db-result-top { display:flex; align-items:center; gap:1rem; margin-bottom:.85rem; padding-bottom:.75rem; border-bottom:1px solid var(--bg-border,#1e1e2e) }
   .db-result-prob{ font-family:var(--font-mono,monospace); font-size:2.6rem; font-weight:700; line-height:1 }
   .db-result-lbl { font-size:13px; font-weight:600; margin-bottom:3px }
   .db-result-sub { font-size:11px; color:var(--text-muted,#666); margin-bottom:6px }
   .db-shap-title { font-size:10px; font-family:var(--font-mono,monospace); color:var(--text-muted,#555); text-transform:uppercase; letter-spacing:.08em; margin-bottom:.5rem }
-
-  /* SHAP bars inside predict result */
   .db-result-shap-row{ display:flex; align-items:center; gap:8px; margin-bottom:8px }
   .db-result-shap-lbl{ font-size:clamp(10px,.9vw,11px); color:var(--text-secondary,#ccc); width:130px; flex-shrink:0 }
   .db-result-shap-bg { flex:1; height:5px; background:var(--bg-border,#1e1e2e); border-radius:4px }
   .db-result-shap-dir{ font-size:10px; font-family:var(--font-mono,monospace); width:85px; text-align:right; flex-shrink:0 }
-
-  /* recommendation pill at bottom of result */
   .db-result-rec{ margin-top:.75rem; padding:.5rem .75rem; border:1px solid #0af3; border-radius:7px; font-family:var(--font-mono,monospace); font-size:11px; color:#0af; line-height:1.5; background:rgba(0,170,255,.03) }
 `;
 
@@ -253,7 +223,6 @@ const STYLES = `
 // SHARED COMPONENTS
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Metric card — top row of the Overview tab */
 function MetricCard({
   value,
   label,
@@ -271,9 +240,7 @@ function MetricCard({
 }) {
   return (
     <div className="db-mc" style={{ animationDelay: `${delay}s` }}>
-      {/* coloured top border strip */}
       <div className="db-mc-bar" style={{ background: color }} />
-      {/* shimmer skeleton while API hasn't responded yet */}
       {loading ? (
         <div className="db-skel" />
       ) : (
@@ -287,7 +254,6 @@ function MetricCard({
   );
 }
 
-/** Risk badge pill — used in feed rows, table cells, and predict result */
 function RiskBadge({ level, prob }: { level: string; prob: number }) {
   const color = riskColor(level);
   return (
@@ -305,9 +271,214 @@ function RiskBadge({ level, prob }: { level: string; prob: number }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// CUSTOMER DETAIL MODAL
+// ════════════════════════════════════════════════════════════════════════════
+function CustomerModal({
+  customer,
+  onClose,
+}: {
+  customer: Customer;
+  onClose: () => void;
+}) {
+  const maxImpact = Math.max(
+    ...(customer.shap_reasons?.map((r) => Math.abs(r.shap_impact)) ?? [1]),
+  );
+  const color = riskColor(customer.risk_level);
+  const prob = Math.round(customer.churn_probability * 100);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="modal-hdr">
+          <div>
+            <div
+              style={{
+                fontFamily: "monospace",
+                fontSize: 15,
+                fontWeight: 700,
+                color: "#f0f0f0",
+                marginBottom: 5,
+              }}
+            >
+              {customer.customer_id}
+            </div>
+            <RiskBadge
+              level={customer.risk_level}
+              prob={customer.churn_probability}
+            />
+          </div>
+          <button className="modal-close" onClick={onClose}>
+            ✕ close
+          </button>
+        </div>
+
+        {/* Churn probability bar */}
+        <div className="modal-section">
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+              marginBottom: 8,
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "monospace",
+                fontSize: 10,
+                color: "#555",
+                textTransform: "uppercase",
+                letterSpacing: ".08em",
+              }}
+            >
+              Churn probability
+            </span>
+            <span
+              style={{
+                fontFamily: "monospace",
+                fontSize: 24,
+                fontWeight: 700,
+                color,
+              }}
+            >
+              {prob}%
+            </span>
+          </div>
+          <div
+            style={{
+              height: 8,
+              background: "#1e1e2e",
+              borderRadius: 999,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                height: 8,
+                borderRadius: 999,
+                width: `${prob}%`,
+                background: `linear-gradient(90deg, ${color}88, ${color})`,
+                transition: "width .6s ease",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Plan & account details */}
+        <div className="modal-section">
+          <div className="modal-section-title">Plan & account</div>
+          <div className="modal-grid">
+            {[
+              { label: "Contract", value: customer.contract },
+              {
+                label: "Tenure",
+                value: `${Math.round(customer.tenure)} months`,
+              },
+              {
+                label: "Monthly £",
+                value: `£${customer.monthly_charges?.toFixed(2)}`,
+              },
+              { label: "Risk level", value: customer.risk_level.toUpperCase() },
+            ].map(({ label, value }) => (
+              <div key={label} className="modal-stat">
+                <div className="modal-stat-label">{label}</div>
+                <div className="modal-stat-value">{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* SHAP breakdown */}
+        <div className="modal-section">
+          <div className="modal-section-title">
+            Why this score — SHAP drivers
+          </div>
+          {customer.shap_reasons?.map((r) => (
+            <div
+              key={r.feature}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 10,
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 11,
+                  color: "#ccc",
+                  width: 140,
+                  flexShrink: 0,
+                }}
+              >
+                {r.feature}
+              </span>
+              <div
+                style={{
+                  flex: 1,
+                  height: 6,
+                  background: "#1e1e2e",
+                  borderRadius: 4,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: 6,
+                    borderRadius: 4,
+                    width: `${Math.min((Math.abs(r.shap_impact) / maxImpact) * 100, 100)}%`,
+                    background:
+                      r.direction === "increases risk" ? "#ff3b3b" : "#30d158",
+                    transition: "width .6s ease",
+                  }}
+                />
+              </div>
+              <span
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 10,
+                  width: 65,
+                  textAlign: "right",
+                  flexShrink: 0,
+                  color:
+                    r.direction === "increases risk" ? "#ff6b6b" : "#30d158",
+                }}
+              >
+                {r.direction === "increases risk" ? "↑ risk" : "↓ risk"}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Recommendation */}
+        {customer.recommendation && (
+          <div className="modal-section">
+            <div className="modal-section-title">Recommended action</div>
+            <div
+              style={{
+                background: "rgba(0,170,255,.04)",
+                border: "1px solid rgba(0,170,255,.15)",
+                borderRadius: 8,
+                padding: ".75rem 1rem",
+                fontFamily: "monospace",
+                fontSize: 12,
+                color: "#0af",
+                lineHeight: 1.6,
+              }}
+            >
+              → {customer.recommendation}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // TAB 0: OVERVIEW
-// Data sources: /summary (cards), /trend (line chart), /features (SHAP bars),
-//               /stream (live feed + priority queue)
 // ════════════════════════════════════════════════════════════════════════════
 function OverviewTab({
   summary,
@@ -327,18 +498,33 @@ function OverviewTab({
   streamStatus: string;
 }) {
   const maxImp = features[0]?.importance ?? 1;
-
-  // SHAP bar colour: red = top driver, orange = mid, cyan = lower
   const shapColor = (imp: number) => {
-    const ratio = imp / maxImp;
-    return ratio > 0.7 ? "#ff3b3b" : ratio > 0.4 ? "#ff9500" : "#0af";
+    const r = imp / maxImp;
+    return r > 0.7 ? "#ff3b3b" : r > 0.4 ? "#ff9500" : "#0af";
   };
+
+  // Modal state lives here — priority panel and modal are siblings
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
+    null,
+  );
+
+  // Filter priority list to only medium / high / critical, all records
+  const priorityRows = priority.filter((c) =>
+    ["critical", "high", "medium"].includes(c.risk_level),
+  );
 
   return (
     <>
-      {/* ── Metric cards row ─────────────────────────────────────────── */}
+      {/* Customer detail modal — rendered at root level so it overlays everything */}
+      {selectedCustomer && (
+        <CustomerModal
+          customer={selectedCustomer}
+          onClose={() => setSelectedCustomer(null)}
+        />
+      )}
+
+      {/* Metric cards */}
       <div className="db-metrics">
-        {/* DEBUG: if these show "—", /summary is not responding */}
         <MetricCard
           value={summary ? summary.total_customers.toLocaleString() : "—"}
           label="Total customers"
@@ -381,17 +567,14 @@ function OverviewTab({
         />
       </div>
 
-      {/* ── Charts row ───────────────────────────────────────────────── */}
+      {/* Charts row */}
       <div className="db-2col">
-        {/* Churn trend line chart — data from GET /trend */}
         <div className="db-panel">
           <div className="db-ph">
             <span className="db-pt">Churn rate by tenure cohort</span>
-            {/* DEBUG label shows which endpoint feeds this chart */}
             <span className="db-ps">% churned · /trend</span>
           </div>
           <div style={{ padding: "0.75rem 0.25rem 0.5rem", height: 200 }}>
-            {/* DEBUG: if this shows "Loading…", GET /trend returned 404 */}
             {trend.length === 0 ? (
               <div className="db-empty">Loading…</div>
             ) : (
@@ -443,15 +626,12 @@ function OverviewTab({
           </div>
         </div>
 
-        {/* SHAP feature importance — data from GET /features */}
         <div className="db-panel">
           <div className="db-ph">
             <span className="db-pt">SHAP feature importance</span>
-            {/* DEBUG label shows which endpoint feeds this panel */}
             <span className="db-ps">Mean |SHAP| · /features</span>
           </div>
           <div style={{ padding: "0.5rem 0" }}>
-            {/* DEBUG: if this shows "Computing…", GET /features returned 404 */}
             {features.length === 0 ? (
               <div className="db-empty">Computing SHAP values…</div>
             ) : (
@@ -477,13 +657,20 @@ function OverviewTab({
         </div>
       </div>
 
-      {/* ── Live feed + Priority queue row ───────────────────────────── */}
-      <div className="db-2col">
-        {/* Live prediction stream — data from GET /stream (SSE) */}
-        <div className="db-panel">
-          <div className="db-ph">
+      {/* Live feed + Priority queue */}
+      <div className="db-2col" style={{ alignItems: "stretch" }}>
+        {/* Live prediction stream */}
+        <div
+          className="db-panel"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            height: "calc(100vh - 280px)",
+            minHeight: 300,
+          }}
+        >
+          <div className="db-ph" style={{ flexShrink: 0 }}>
             <span className="db-pt">Live prediction stream</span>
-            {/* DEBUG: status shows "connecting…" if /stream is unreachable */}
             <span
               className="db-ps"
               style={{ color: streamStatus === "live" ? "#30d158" : "#555" }}
@@ -495,81 +682,245 @@ function OverviewTab({
                   : "✕ error"}
             </span>
           </div>
-          {feed.length === 0 ? (
-            <div className="db-empty">Waiting for stream…</div>
-          ) : (
-            feed.map((c) => (
-              <div
-                key={`${c.customer_id}-${c.churn_probability}`}
-                className="db-feed-row"
-                style={{
-                  background:
-                    c.risk_level === "critical"
-                      ? "rgba(255,59,59,0.03)"
-                      : "transparent",
-                }}
-              >
-                <div>
-                  <div className="db-feed-id">{c.customer_id}</div>
-                  <div className="db-feed-sub">
-                    {c.contract} · {Math.round(c.tenure)}mo · £
-                    {c.monthly_charges?.toFixed(2)}/mo
+          <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+            {feed.length === 0 ? (
+              <div className="db-empty">Waiting for stream…</div>
+            ) : (
+              feed.map((c) => (
+                <div
+                  key={`${c.customer_id}-${c.churn_probability}`}
+                  className="db-feed-row"
+                  style={{
+                    background:
+                      c.risk_level === "critical"
+                        ? "rgba(255,59,59,0.03)"
+                        : "transparent",
+                  }}
+                >
+                  <div>
+                    <div className="db-feed-id">{c.customer_id}</div>
+                    <div className="db-feed-sub">
+                      {c.contract} · {Math.round(c.tenure)}mo · £
+                      {c.monthly_charges?.toFixed(2)}/mo
+                    </div>
                   </div>
+                  <RiskBadge level={c.risk_level} prob={c.churn_probability} />
+                  {c.customer_id === newestId && <div className="db-ping" />}
                 </div>
-                <RiskBadge level={c.risk_level} prob={c.churn_probability} />
-                {/* green ping dot on the most recently scored row */}
-                {c.customer_id === newestId && <div className="db-ping" />}
-              </div>
-            ))
-          )}
-          <div className="db-ftr">
+              ))
+            )}
+          </div>
+          <div className="db-ftr" style={{ flexShrink: 0 }}>
             <div className="db-dot-r" />
             <span>New prediction every ~2s</span>
           </div>
         </div>
 
-        {/* Priority action queue — built from the SSE stream in real time */}
-        <div className="db-panel">
-          <div className="db-ph">
+        {/* Priority action queue — scrollable table, click row for modal */}
+        <div
+          className="db-panel"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            height: "calc(100vh - 280px)",
+            minHeight: 300,
+          }}
+        >
+          <div className="db-ph" style={{ flexShrink: 0 }}>
             <span className="db-pt">Priority action queue</span>
-            <span className="db-ps">Top 5 by risk · from stream</span>
+            <span className="db-ps">
+              {priorityRows.length > 0
+                ? `${priorityRows.length} customers · `
+                : ""}
+              critical · high · medium · click row for details
+            </span>
           </div>
-          {priority.length === 0 ? (
-            <div className="db-empty">Building from stream…</div>
-          ) : (
-            priority.map((c, i) => {
-              // Show the top SHAP reason that increases risk
-              const topReason = c.shap_reasons?.find(
-                (r) => r.direction === "increases risk",
-              );
-              return (
-                <div
-                  className="db-pq-row"
-                  key={c.customer_id}
-                  style={{ animationDelay: `${i * 0.06}s` }}
+
+          {/* Scrollable table area */}
+          <div
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              overflowX: "auto",
+              minHeight: 0,
+            }}
+          >
+            {priorityRows.length === 0 ? (
+              <div className="db-empty">
+                Building from stream…
+                <br />
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: "#444",
+                    marginTop: 4,
+                    display: "block",
+                  }}
                 >
-                  <div className="db-pq-top">
-                    <span className="db-pq-id">
-                      #{i + 1} {c.customer_id}
-                    </span>
-                    <RiskBadge
-                      level={c.risk_level}
-                      prob={c.churn_probability}
-                    />
-                  </div>
-                  {topReason && (
-                    <div className="db-pq-reason">
-                      ↑ {topReason.feature} (+{topReason.shap_impact.toFixed(2)}
-                      ) · {c.contract} · {Math.round(c.tenure)}mo
-                    </div>
-                  )}
-                  {c.recommendation && (
-                    <div className="db-pq-rec">→ {c.recommendation}</div>
-                  )}
-                </div>
-              );
-            })
-          )}
+                  Medium / high / critical customers appear here
+                </span>
+              </div>
+            ) : (
+              <table className="pq-table">
+                <thead>
+                  <tr>
+                    {[
+                      "#",
+                      "Customer",
+                      "Risk",
+                      "Contract",
+                      "Tenure",
+                      "£/mo",
+                      "Top driver",
+                    ].map((h) => (
+                      <th key={h}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {priorityRows.map((c, i) => {
+                    const top =
+                      c.shap_reasons?.find(
+                        (r) => r.direction === "increases risk",
+                      ) ?? c.shap_reasons?.[0];
+                    return (
+                      <tr
+                        key={c.customer_id}
+                        onClick={() => setSelectedCustomer(c)}
+                        style={{
+                          background:
+                            c.risk_level === "critical"
+                              ? "rgba(255,59,59,0.02)"
+                              : "transparent",
+                        }}
+                      >
+                        {/* Rank */}
+                        <td
+                          style={{
+                            fontFamily: "monospace",
+                            fontSize: 10,
+                            color: "#555",
+                          }}
+                        >
+                          {i + 1}
+                        </td>
+
+                        {/* Customer ID */}
+                        <td
+                          style={{
+                            fontFamily: "monospace",
+                            fontSize: "clamp(11px,1vw,12px)",
+                            fontWeight: 600,
+                            color: "#f0f0f0",
+                          }}
+                        >
+                          {c.customer_id}
+                        </td>
+
+                        {/* Risk badge */}
+                        <td>
+                          <RiskBadge
+                            level={c.risk_level}
+                            prob={c.churn_probability}
+                          />
+                        </td>
+
+                        {/* Contract */}
+                        <td
+                          style={{
+                            fontFamily: "monospace",
+                            fontSize: "clamp(10px,.9vw,11px)",
+                            color: "#888",
+                          }}
+                        >
+                          {c.contract}
+                        </td>
+
+                        {/* Tenure */}
+                        <td
+                          style={{
+                            fontFamily: "monospace",
+                            fontSize: "clamp(10px,.9vw,11px)",
+                            color: "#888",
+                          }}
+                        >
+                          {Math.round(c.tenure)}mo
+                        </td>
+
+                        {/* Monthly charges */}
+                        <td
+                          style={{
+                            fontFamily: "monospace",
+                            fontSize: "clamp(10px,.9vw,11px)",
+                            color: "#888",
+                          }}
+                        >
+                          £{c.monthly_charges?.toFixed(2)}
+                        </td>
+
+                        {/* Top SHAP driver with mini bar */}
+                        <td>
+                          {top ? (
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontFamily: "monospace",
+                                  fontSize: 10,
+                                  color: "#888",
+                                  minWidth: 80,
+                                }}
+                              >
+                                {top.feature}
+                              </span>
+                              <div
+                                style={{
+                                  width: 36,
+                                  height: 4,
+                                  background: "#1e1e2e",
+                                  borderRadius: 4,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    height: 4,
+                                    borderRadius: 4,
+                                    width: `${Math.min(Math.abs(top.shap_impact) * 60, 100)}%`,
+                                    background:
+                                      top.direction === "increases risk"
+                                        ? "#ff3b3b"
+                                        : "#30d158",
+                                  }}
+                                />
+                              </div>
+                              <span
+                                style={{
+                                  fontFamily: "monospace",
+                                  fontSize: 9,
+                                  color: "#555",
+                                }}
+                              >
+                                {top.shap_impact > 0 ? "+" : ""}
+                                {top.shap_impact.toFixed(2)}
+                              </span>
+                            </div>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       </div>
     </>
@@ -578,8 +929,6 @@ function OverviewTab({
 
 // ════════════════════════════════════════════════════════════════════════════
 // TAB 1: CUSTOMER SEARCH
-// Data source: GET /customers?limit=50 (fetched once, filtered client-side)
-// Features: text search, risk/contract dropdowns, sortable columns, pagination
 // ════════════════════════════════════════════════════════════════════════════
 function SearchTab({ customers }: { customers: Customer[] }) {
   const [query, setQuery] = useState("");
@@ -590,18 +939,17 @@ function SearchTab({ customers }: { customers: Customer[] }) {
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 10;
 
-  // Client-side filter + sort — no extra API calls
   const filtered = customers
     .filter((c) => {
       const q = query.toLowerCase();
-      const matchQuery =
-        !q ||
-        c.customer_id.toLowerCase().includes(q) ||
-        c.contract.toLowerCase().includes(q) ||
-        c.risk_level.toLowerCase().includes(q);
-      const matchRisk = !riskFilter || c.risk_level === riskFilter;
-      const matchContract = !contractFilter || c.contract === contractFilter;
-      return matchQuery && matchRisk && matchContract;
+      return (
+        (!q ||
+          c.customer_id.toLowerCase().includes(q) ||
+          c.contract.toLowerCase().includes(q) ||
+          c.risk_level.toLowerCase().includes(q)) &&
+        (!riskFilter || c.risk_level === riskFilter) &&
+        (!contractFilter || c.contract === contractFilter)
+      );
     })
     .sort((a, b) => {
       const get = (x: Customer) =>
@@ -616,7 +964,6 @@ function SearchTab({ customers }: { customers: Customer[] }) {
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
 
-  // Toggle sort: same column → flip direction; new column → default desc
   const toggleSort = (k: typeof sortKey) => {
     if (sortKey === k) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
     else {
@@ -630,7 +977,6 @@ function SearchTab({ customers }: { customers: Customer[] }) {
 
   return (
     <div className="db-panel">
-      {/* ── Search bar + filter dropdowns */}
       <div className="db-search-bar">
         <input
           className="db-input"
@@ -642,7 +988,6 @@ function SearchTab({ customers }: { customers: Customer[] }) {
             setPage(0);
           }}
         />
-        {/* Risk level filter */}
         <select
           className="db-select"
           value={riskFilter}
@@ -657,7 +1002,6 @@ function SearchTab({ customers }: { customers: Customer[] }) {
           <option value="medium">Medium</option>
           <option value="low">Low</option>
         </select>
-        {/* Contract type filter */}
         <select
           className="db-select"
           value={contractFilter}
@@ -673,7 +1017,6 @@ function SearchTab({ customers }: { customers: Customer[] }) {
         </select>
       </div>
 
-      {/* DEBUG: if this says "Loading customers…", GET /customers returned 404 */}
       {customers.length === 0 ? (
         <div className="db-empty">Loading customers from /customers…</div>
       ) : (
@@ -682,7 +1025,6 @@ function SearchTab({ customers }: { customers: Customer[] }) {
             <thead>
               <tr>
                 <th>Customer ID</th>
-                {/* Sortable columns — click header to sort */}
                 <th onClick={() => toggleSort("risk")}>
                   Risk score{sortIcon("risk")}
                 </th>
@@ -699,7 +1041,6 @@ function SearchTab({ customers }: { customers: Customer[] }) {
             </thead>
             <tbody>
               {paged.map((c) => {
-                // Top SHAP reason = first entry (model returns them sorted by |impact|)
                 const topShap = c.shap_reasons?.[0];
                 return (
                   <tr key={c.customer_id}>
@@ -717,7 +1058,6 @@ function SearchTab({ customers }: { customers: Customer[] }) {
                     </td>
                     <td>
                       {topShap ? (
-                        // Inline bar showing SHAP impact magnitude
                         <div className="db-bar-wrap">
                           <span
                             style={{
@@ -775,7 +1115,6 @@ function SearchTab({ customers }: { customers: Customer[] }) {
         </div>
       )}
 
-      {/* ── Table footer: count + pagination */}
       <div className="db-tbl-ftr">
         <span>
           Showing {paged.length} of {filtered.length} customers
@@ -810,15 +1149,10 @@ function SearchTab({ customers }: { customers: Customer[] }) {
 
 // ════════════════════════════════════════════════════════════════════════════
 // TAB 2: PREDICT CUSTOMER
-// Sends POST /predict with all fields from CustomerInput schema
-//
-// DEBUG: if you get 422, open the error panel — it shows the exact missing field.
-// The field names here must exactly match what schemas.py expects.
 // ════════════════════════════════════════════════════════════════════════════
 function PredictTab() {
-  // Form state — keys match CustomerInput field names in schemas.py exactly
   const [form, setForm] = useState({
-    gender: "Male", // ← was missing before! caused all the 422s
+    gender: "Male",
     SeniorCitizen: "0",
     Partner: "No",
     Dependents: "No",
@@ -845,8 +1179,6 @@ function PredictTab() {
 
   const setField = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
-  // Field definitions — label + options (undefined = free text input)
-  // Order here = order in the form grid
   const FIELDS: Array<{
     key: string;
     label: string;
@@ -928,25 +1260,18 @@ function PredictTab() {
     setError("");
     setResult(null);
     try {
-      // Coerce numeric fields from string to number before sending
       const body: Record<string, string | number> = { ...form };
       ["tenure", "MonthlyCharges", "TotalCharges", "SeniorCitizen"].forEach(
         (k) => {
           body[k] = parseFloat(form[k as keyof typeof form]) || 0;
         },
       );
-
       const res = await fetch(`${API}/predict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-
-      if (!res.ok) {
-        // Show full error text — helps debug 422 validation errors
-        const text = await res.text();
-        throw new Error(`${res.status} — ${text}`);
-      }
+      if (!res.ok) throw new Error(`${res.status} — ${await res.text()}`);
       setResult(await res.json());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not reach /predict");
@@ -955,14 +1280,12 @@ function PredictTab() {
     }
   };
 
-  // Normalise SHAP bar widths relative to the largest impact in this result
   const maxShap = result
     ? Math.max(...result.shap_reasons.map((r) => Math.abs(r.shap_impact)))
     : 1;
 
   return (
     <div className="db-pred-grid">
-      {/* ── Form panel ─────────────────────────────────────────────── */}
       <div className="db-panel">
         <div className="db-ph">
           <span className="db-pt">Customer details</span>
@@ -973,7 +1296,6 @@ function PredictTab() {
             <div className="db-field" key={f.key}>
               <span className="db-field-lbl">{f.label}</span>
               {f.options ? (
-                // Dropdown select for categorical fields
                 <select
                   className="db-field-input"
                   value={form[f.key as keyof typeof form]}
@@ -984,7 +1306,6 @@ function PredictTab() {
                   ))}
                 </select>
               ) : (
-                // Number input for numeric fields
                 <input
                   className="db-field-input"
                   type={f.type ?? "text"}
@@ -1000,7 +1321,6 @@ function PredictTab() {
         </button>
       </div>
 
-      {/* ── Result panel ───────────────────────────────────────────── */}
       <div className="db-panel">
         <div className="db-ph">
           <span className="db-pt">Prediction result</span>
@@ -1013,7 +1333,6 @@ function PredictTab() {
           </span>
         </div>
 
-        {/* Placeholder before first run */}
         {!result && !error && !loading && (
           <div className="db-empty">
             Fill in customer details and
@@ -1021,16 +1340,12 @@ function PredictTab() {
             click Run prediction to see results.
           </div>
         )}
-
-        {/* Loading skeleton */}
         {loading && (
           <div style={{ padding: "1.5rem" }}>
             <div className="db-skel" style={{ width: 120, marginBottom: 10 }} />
             <div className="db-skel" style={{ width: 80 }} />
           </div>
         )}
-
-        {/* Error — shows full 422 body so you can see the missing field */}
         {error && (
           <div
             style={{
@@ -1044,11 +1359,8 @@ function PredictTab() {
             {error}
           </div>
         )}
-
-        {/* Result */}
         {result && !loading && (
           <div className="db-result-box">
-            {/* Big probability number + risk badge */}
             <div className="db-result-top">
               <div
                 className="db-result-prob"
@@ -1075,8 +1387,6 @@ function PredictTab() {
                 />
               </div>
             </div>
-
-            {/* SHAP breakdown bars */}
             <div className="db-shap-title">SHAP breakdown — why this score</div>
             {result.shap_reasons.map((r) => (
               <div className="db-result-shap-row" key={r.feature}>
@@ -1108,8 +1418,6 @@ function PredictTab() {
                 </span>
               </div>
             ))}
-
-            {/* Model recommendation (if present in predict() output) */}
             {result.recommendation && (
               <div className="db-result-rec">→ {result.recommendation}</div>
             )}
@@ -1121,13 +1429,10 @@ function PredictTab() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// ROOT DASHBOARD COMPONENT
-// Owns all shared state and data fetching. Passes data down to tab components.
+// ROOT DASHBOARD
 // ════════════════════════════════════════════════════════════════════════════
 export default function Dashboard() {
   const [tab, setTab] = useState<Tab>(0);
-
-  // ── Shared data state ────────────────────────────────────────────────────
   const [summary, setSummary] = useState<Summary | null>(null);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
   const [features, setFeatures] = useState<Feature[]>([]);
@@ -1140,84 +1445,64 @@ export default function Dashboard() {
     "connecting" | "live" | "error"
   >("connecting");
 
-  // Map of all customers ever seen by the stream — used to build priority queue
+  // Tracks ALL customers ever seen by the stream — no cap
   const seenPriority = useRef<Map<string, Customer>>(new Map());
 
-  // ── Static fetches on mount ──────────────────────────────────────────────
-  // These run once. If any return 404, add the endpoint to main.py.
   useEffect(() => {
     const stamp = () => setLastUpdated(new Date().toLocaleTimeString());
-
-    // /summary → metric cards
     fetch(`${API}/summary`)
       .then((r) => r.json())
       .then((d) => {
         setSummary(d);
         stamp();
       })
-      .catch((e) => console.error("[Dashboard] /summary failed:", e));
-
-    // /trend → line chart
+      .catch((e) => console.error("[/summary]", e));
     fetch(`${API}/trend`)
       .then((r) => r.json())
       .then((d) => setTrend(d.trend ?? []))
-      .catch((e) => console.error("[Dashboard] /trend failed:", e));
-
-    // /features → SHAP bars (slow — runs 150 predictions server-side)
+      .catch((e) => console.error("[/trend]", e));
     fetch(`${API}/features`)
       .then((r) => r.json())
       .then((d) => setFeatures(d.features ?? []))
-      .catch((e) => console.error("[Dashboard] /features failed:", e));
-
-    // /customers → search table
+      .catch((e) => console.error("[/features]", e));
     fetch(`${API}/customers?limit=50`)
       .then((r) => r.json())
       .then((d) => setCustomers(d.customers ?? []))
-      .catch((e) => console.error("[Dashboard] /customers failed:", e));
+      .catch((e) => console.error("[/customers]", e));
   }, []);
 
-  // ── SSE stream connection ────────────────────────────────────────────────
-  // EventSource stays open for the lifetime of the component.
-  // Each message is a full predict() result JSON.
   useEffect(() => {
     const es = new EventSource(`${API}/stream`);
-
     es.onopen = () => {
       setStreamStatus("live");
-      console.log("[Dashboard] SSE stream connected");
+      console.log("[stream] connected");
     };
-
+    es.onerror = () => {
+      setStreamStatus("error");
+    };
     es.onmessage = (e) => {
       try {
         const c: Customer = JSON.parse(e.data);
-        if (!c || (c as any).error) return; // skip error payloads
-
+        if (!c || (c as any).error) return;
         setNewestId(c.customer_id);
         setLastUpdated(new Date().toLocaleTimeString());
-
-        // Live feed — keep last 8 rows
         setFeed((prev) => [c, ...prev].slice(0, 8));
 
-        // Priority queue — track all seen, always show top 5 by risk
+        // Store ALL customers — no .slice(0, 5) so priority queue shows everyone
         seenPriority.current.set(c.customer_id, c);
-        const top5 = [...seenPriority.current.values()]
-          .sort((a, b) => b.churn_probability - a.churn_probability)
-          .slice(0, 5);
-        setPriority(top5);
+        setPriority(
+          [...seenPriority.current.values()].sort(
+            (a, b) => b.churn_probability - a.churn_probability,
+          ),
+          // ← no slice here — all records passed, OverviewTab filters to med/high/critical
+        );
       } catch (err) {
-        console.warn("[Dashboard] SSE parse error:", err);
+        console.warn("[stream] parse error:", err);
       }
     };
-
-    es.onerror = () => {
-      setStreamStatus("error");
-      console.error("[Dashboard] SSE stream error — is /stream running?");
-    };
-
-    return () => es.close(); // cleanup on unmount
+    return () => es.close();
   }, []);
 
-  // Stream status badge styling
   const streamBadgeStyle = {
     background:
       streamStatus === "live"
@@ -1225,13 +1510,7 @@ export default function Dashboard() {
         : streamStatus === "connecting"
           ? "#ff950018"
           : "#ff3b3b18",
-    border: `1px solid ${
-      streamStatus === "live"
-        ? "#30d15833"
-        : streamStatus === "connecting"
-          ? "#ff950033"
-          : "#ff3b3b33"
-    }`,
+    border: `1px solid ${streamStatus === "live" ? "#30d15833" : streamStatus === "connecting" ? "#ff950033" : "#ff3b3b33"}`,
     color:
       streamStatus === "live"
         ? "#30d158"
@@ -1244,7 +1523,6 @@ export default function Dashboard() {
     <>
       <style>{STYLES}</style>
       <div className="db">
-        {/* ── Header ───────────────────────────────────────────────── */}
         <div className="db-hdr">
           <div className="db-hdr-l">
             <div className="db-dot" />
@@ -1252,7 +1530,6 @@ export default function Dashboard() {
             <span className="db-badge">Dashboard</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {/* Stream status indicator — green = connected, orange = connecting, red = error */}
             <span className="db-stream-badge" style={streamBadgeStyle}>
               {streamStatus === "live"
                 ? "● stream live"
@@ -1266,7 +1543,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ── Tab switcher ─────────────────────────────────────────── */}
         <div className="db-tabs">
           {(["Overview", "Customer search", "Predict customer"] as const).map(
             (label, i) => (
@@ -1281,7 +1557,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* ── Tab content ──────────────────────────────────────────── */}
         {tab === 0 && (
           <OverviewTab
             summary={summary}
