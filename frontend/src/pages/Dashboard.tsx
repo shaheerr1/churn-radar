@@ -103,60 +103,89 @@ const STYLES = `
 
   .db{ padding:clamp(1rem,2vw,1.5rem) clamp(1rem,3vw,2rem); min-height:100vh; background:var(--bg,#0a0a0f); color:var(--text-primary,#f0f0f0); font-family:var(--font-display,system-ui,sans-serif) }
 
-  .db-hdr{ display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:8px }
+  /* header */
+  .db-hdr  { display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:8px }
   .db-hdr-l{ display:flex; align-items:center; gap:10px }
   .db-title{ font-size:clamp(13px,1.5vw,15px); font-weight:800; letter-spacing:-0.03em }
   .db-dot  { width:9px; height:9px; border-radius:50%; background:#30d158; animation:pulse 2s infinite; flex-shrink:0 }
   .db-dot-r{ width:6px; height:6px; border-radius:50%; background:#ff3b3b; animation:pulse 1.5s infinite; flex-shrink:0 }
   .db-badge{ font-family:var(--font-mono,monospace); font-size:10px; padding:2px 9px; border-radius:999px; background:#30d15818; border:1px solid #30d15833; color:#30d158 }
   .db-time { font-family:var(--font-mono,monospace); font-size:10px; color:var(--text-muted,#555) }
-  .db-stream-badge{ font-family:var(--font-mono,monospace); font-size:10px; padding:2px 9px; border-radius:999px }
+  .db-sbadge{ font-family:var(--font-mono,monospace); font-size:10px; padding:2px 9px; border-radius:999px }
 
+  /* tabs */
   .db-tabs{ display:flex; gap:4px; margin-bottom:1rem; background:var(--bg-card,#111); border:1px solid var(--bg-border,#1e1e2e); border-radius:10px; padding:4px; width:fit-content }
   .db-tab { padding:6px 18px; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer; border:none; background:transparent; color:var(--text-muted,#555); transition:all .2s; white-space:nowrap; font-family:inherit }
   .db-tab.on{ background:var(--bg-border,#1e1e2e); color:var(--text-primary,#f0f0f0) }
   .db-tab:hover:not(.on){ color:var(--text-secondary,#aaa) }
 
+  /* metric cards */
   .db-metrics{ display:grid; grid-template-columns:repeat(auto-fit,minmax(clamp(130px,18vw,190px),1fr)); gap:10px; margin-bottom:10px }
-  .db-mc{ background:var(--bg-card,#111); border:1px solid var(--bg-border,#1e1e2e); border-radius:12px; padding:clamp(.7rem,1.5vw,1.1rem) clamp(.7rem,1.5vw,1.25rem); position:relative; overflow:hidden; animation:fadeUp .5s ease both }
+  .db-mc    { background:var(--bg-card,#111); border:1px solid var(--bg-border,#1e1e2e); border-radius:12px; padding:clamp(.7rem,1.5vw,1.1rem) clamp(.7rem,1.5vw,1.25rem); position:relative; overflow:hidden; animation:fadeUp .5s ease both }
   .db-mc-bar{ position:absolute; top:0; left:0; right:0; height:2px }
   .db-mc-val{ font-family:var(--font-mono,monospace); font-size:clamp(1.1rem,2.5vw,1.8rem); font-weight:700; letter-spacing:-.02em; line-height:1; margin-bottom:5px }
   .db-mc-lbl{ font-size:clamp(11px,1.1vw,13px); font-weight:600; margin-bottom:2px }
   .db-mc-sub{ font-size:clamp(10px,.9vw,11px); color:var(--text-muted,#555); line-height:1.4 }
-  .db-skel{ height:1.8rem; width:80px; border-radius:6px; background:linear-gradient(90deg,var(--bg-border,#1e1e2e) 25%,#2a2a3a 50%,var(--bg-border,#1e1e2e) 75%); background-size:400px 100%; animation:shimmer 1.4s infinite; margin-bottom:5px }
+  .db-skel  { height:1.8rem; width:80px; border-radius:6px; background:linear-gradient(90deg,var(--bg-border,#1e1e2e) 25%,#2a2a3a 50%,var(--bg-border,#1e1e2e) 75%); background-size:400px 100%; animation:shimmer 1.4s infinite; margin-bottom:5px }
 
+  /* panels */
   .db-panel{ background:var(--bg-card,#111); border:1px solid var(--bg-border,#1e1e2e); border-radius:12px; overflow:hidden; margin-bottom:10px }
-  .db-ph  { padding:clamp(.55rem,.9vw,.8rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px }
-  .db-pt  { font-size:clamp(11px,1.1vw,13px); font-weight:700; letter-spacing:-.01em }
-  .db-ps  { font-family:var(--font-mono,monospace); font-size:clamp(9px,.9vw,11px); color:var(--text-muted,#555) }
+  .db-ph   { padding:clamp(.55rem,.9vw,.8rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px }
+  .db-pt   { font-size:clamp(11px,1.1vw,13px); font-weight:700; letter-spacing:-.01em }
+  .db-ps   { font-family:var(--font-mono,monospace); font-size:clamp(9px,.9vw,11px); color:var(--text-muted,#555) }
 
+  /* 2-col layout — stream gets 35%, priority gets 65% */
+  .db-feed-pq-grid{ display:grid; grid-template-columns:35fr 65fr; gap:10px; margin-bottom:10px; align-items:stretch }
+  @media(max-width:900px){ .db-feed-pq-grid{ grid-template-columns:1fr } }
+
+  /* charts 2-col */
   .db-2col{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px }
   @media(max-width:860px){ .db-2col{ grid-template-columns:1fr } }
 
+  /* SHAP bars (overview) */
   .db-shap-row{ padding:clamp(.35rem,.7vw,.5rem) clamp(.75rem,1.2vw,1.1rem); display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--bg-border,#1e1e2e) }
   .db-shap-row:last-child{ border-bottom:none }
   .db-shap-lbl{ font-size:clamp(10px,1vw,12px); color:var(--text-secondary,#ccc); width:clamp(120px,14vw,160px); flex-shrink:0 }
   .db-shap-bg { flex:1; height:5px; background:var(--bg-border,#1e1e2e); border-radius:4px }
   .db-shap-val{ font-family:var(--font-mono,monospace); font-size:11px; color:var(--text-muted,#555); width:32px; text-align:right; flex-shrink:0 }
 
-  .db-feed-row{ padding:clamp(.45rem,.8vw,.65rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); display:flex; align-items:center; justify-content:space-between; gap:8px; position:relative; transition:opacity .45s ease,transform .45s cubic-bezier(.22,1,.36,1) }
+  /* live feed rows */
+  .db-feed-row{ padding:clamp(.45rem,.8vw,.65rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); display:flex; align-items:center; justify-content:space-between; gap:8px; position:relative }
   .db-feed-row:last-child{ border-bottom:none }
-  .db-feed-id { font-family:var(--font-mono,monospace); font-size:clamp(11px,1vw,12px); font-weight:600 }
-  .db-feed-sub{ font-family:var(--font-mono,monospace); font-size:clamp(9px,.9vw,10px); color:var(--text-muted,#555); margin-top:2px }
-  .db-ping{ position:absolute; top:50%; right:clamp(.75rem,1.2vw,1.1rem); transform:translateY(-50%); width:6px; height:6px; border-radius:50%; background:#30d158; animation:ping 1.1s ease-out }
-  .db-ftr { padding:clamp(.4rem,.7vw,.55rem) clamp(.75rem,1.2vw,1.1rem); display:flex; align-items:center; gap:8px; border-top:1px solid var(--bg-border,#1e1e2e) }
+  .db-feed-id { font-family:var(--font-mono,monospace); font-size:clamp(10px,.95vw,11px); font-weight:600 }
+  .db-feed-sub{ font-family:var(--font-mono,monospace); font-size:clamp(8px,.8vw,9px); color:var(--text-muted,#555); margin-top:2px }
+  .db-ping    { position:absolute; top:50%; right:clamp(.75rem,1.2vw,1.1rem); transform:translateY(-50%); width:6px; height:6px; border-radius:50%; background:#30d158; animation:ping 1.1s ease-out }
+  .db-ftr     { padding:clamp(.4rem,.7vw,.55rem) clamp(.75rem,1.2vw,1.1rem); display:flex; align-items:center; gap:8px; border-top:1px solid var(--bg-border,#1e1e2e) }
   .db-ftr span{ font-family:var(--font-mono,monospace); font-size:clamp(9px,.9vw,10px); color:var(--text-muted,#555) }
 
-  .rb{ font-family:var(--font-mono,monospace); font-size:clamp(9px,.9vw,10px); font-weight:600; padding:2px 7px; border-radius:4px; white-space:nowrap; text-transform:uppercase; letter-spacing:.04em }
+  /* risk badge */
+  .rb{ font-family:var(--font-mono,monospace); font-size:clamp(9px,.85vw,10px); font-weight:600; padding:2px 6px; border-radius:4px; white-space:nowrap; text-transform:uppercase; letter-spacing:.04em }
 
+  /* generic empty */
   .db-empty{ padding:2rem; text-align:center; font-family:var(--font-mono,monospace); font-size:11px; color:var(--text-muted,#555) }
 
-  /* ── Priority table ── */
+  /* ── Priority queue table ── */
+  .pq-search-wrap{ padding:.6rem .85rem; border-bottom:1px solid #1e1e2e; display:flex; align-items:center; gap:8px; flex-shrink:0 }
+  .pq-search{ background:#0a0a0f; border:1px solid #2a2a3a; border-radius:7px; padding:5px 10px; color:#f0f0f0; font-family:var(--font-mono,monospace); font-size:11px; outline:none; flex:1; transition:border-color .2s }
+  .pq-search:focus{ border-color:#444 }
+  .pq-search::placeholder{ color:#444 }
+  .pq-count{ font-family:var(--font-mono,monospace); font-size:10px; color:#555; white-space:nowrap }
+
   .pq-table{ width:100%; border-collapse:collapse; font-size:clamp(10px,.9vw,12px) }
-  .pq-table th{ font-family:var(--font-mono,monospace); font-size:clamp(9px,.8vw,10px); color:#555; text-transform:uppercase; letter-spacing:.08em; text-align:left; font-weight:400; padding:clamp(.4rem,.7vw,.55rem) clamp(.5rem,1vw,.85rem); border-bottom:1px solid #1e1e2e; white-space:nowrap; position:sticky; top:0; background:var(--bg-card,#111); z-index:1 }
-  .pq-table td{ padding:clamp(.45rem,.8vw,.6rem) clamp(.5rem,1vw,.85rem); border-bottom:1px solid #1e1e2e; white-space:nowrap; vertical-align:middle }
+  .pq-table th{
+    font-family:var(--font-mono,monospace); font-size:clamp(9px,.75vw,10px);
+    color:#555; text-transform:uppercase; letter-spacing:.07em;
+    text-align:left; font-weight:400;
+    padding:clamp(.4rem,.6vw,.5rem) clamp(.4rem,.8vw,.75rem);
+    border-bottom:1px solid #1e1e2e; white-space:nowrap;
+    position:sticky; top:0; background:var(--bg-card,#111); z-index:1;
+  }
+  .pq-table td{
+    padding:clamp(.4rem,.7vw,.55rem) clamp(.4rem,.8vw,.75rem);
+    border-bottom:1px solid #1e1e2e; white-space:nowrap; vertical-align:middle;
+  }
   .pq-table tr:last-child td{ border-bottom:none }
-  .pq-table tbody tr{ cursor:pointer; transition:background .15s }
+  .pq-table tbody tr{ cursor:pointer; transition:background .12s }
   .pq-table tbody tr:hover td{ background:rgba(255,255,255,.04) }
 
   /* ── Modal ── */
@@ -173,7 +202,7 @@ const STYLES = `
   .modal-stat-label{ font-family:var(--font-mono,monospace); font-size:9px; color:#555; text-transform:uppercase; letter-spacing:.08em; margin-bottom:3px }
   .modal-stat-value{ font-family:var(--font-mono,monospace); font-size:12px; font-weight:600; color:#f0f0f0 }
 
-  /* ── Search tab ── */
+  /* ── Customer search tab ── */
   .db-search-bar{ display:flex; align-items:center; gap:8px; padding:clamp(.6rem,1vw,.85rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); flex-wrap:wrap }
   .db-input { background:var(--bg,#0a0a0f); border:1px solid var(--bg-border,#1e1e2e); border-radius:7px; padding:6px 10px; color:var(--text-primary,#f0f0f0); font-family:var(--font-mono,monospace); font-size:12px; outline:none; transition:border-color .2s }
   .db-input:focus{ border-color:#333 }
@@ -192,7 +221,7 @@ const STYLES = `
   .db-tbl-ftr span{ font-family:var(--font-mono,monospace); font-size:10px; color:var(--text-muted,#555) }
   .db-bar-wrap{ display:flex; align-items:center; gap:6px }
   .db-bar-bg  { width:50px; height:4px; background:var(--bg-border,#1e1e2e); border-radius:4px; flex-shrink:0 }
-  .db-pg-btn{ background:var(--bg-border,#1e1e2e); border:1px solid #2a2a3a; border-radius:5px; color:var(--text-muted,#888); font-family:var(--font-mono,monospace); font-size:10px; padding:3px 8px; cursor:pointer }
+  .db-pg-btn  { background:var(--bg-border,#1e1e2e); border:1px solid #2a2a3a; border-radius:5px; color:var(--text-muted,#888); font-family:var(--font-mono,monospace); font-size:10px; padding:3px 8px; cursor:pointer }
   .db-pg-btn:disabled{ opacity:.3; cursor:not-allowed }
 
   /* ── Predict tab ── */
@@ -313,7 +342,7 @@ function CustomerModal({
           </button>
         </div>
 
-        {/* Churn probability bar */}
+        {/* Probability bar */}
         <div className="modal-section">
           <div
             style={{
@@ -365,7 +394,7 @@ function CustomerModal({
           </div>
         </div>
 
-        {/* Plan & account details */}
+        {/* Plan details */}
         <div className="modal-section">
           <div className="modal-section-title">Plan & account</div>
           <div className="modal-grid">
@@ -503,19 +532,27 @@ function OverviewTab({
     return r > 0.7 ? "#ff3b3b" : r > 0.4 ? "#ff9500" : "#0af";
   };
 
-  // Modal state lives here — priority panel and modal are siblings
+  // Modal for priority queue
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
     null,
   );
 
-  // Filter priority list to only medium / high / critical, all records
-  const priorityRows = priority.filter((c) =>
-    ["critical", "high", "medium"].includes(c.risk_level),
-  );
+  // Search state for priority queue
+  const [pqSearch, setPqSearch] = useState("");
+
+  // Priority rows: medium/high/critical only, filtered by search
+  const priorityRows = priority
+    .filter((c) => ["critical", "high", "medium"].includes(c.risk_level))
+    .filter(
+      (c) =>
+        !pqSearch ||
+        c.customer_id.toLowerCase().includes(pqSearch.toLowerCase()),
+    );
+
+  const PANEL_HEIGHT = "calc(100vh - 290px)";
 
   return (
     <>
-      {/* Customer detail modal — rendered at root level so it overlays everything */}
       {selectedCustomer && (
         <CustomerModal
           customer={selectedCustomer}
@@ -567,7 +604,7 @@ function OverviewTab({
         />
       </div>
 
-      {/* Charts row */}
+      {/* Charts */}
       <div className="db-2col">
         <div className="db-panel">
           <div className="db-ph">
@@ -657,26 +694,26 @@ function OverviewTab({
         </div>
       </div>
 
-      {/* Live feed + Priority queue */}
-      <div className="db-2col" style={{ alignItems: "stretch" }}>
-        {/* Live prediction stream */}
+      {/* ── Live feed (35%) + Priority queue (65%) ── */}
+      <div className="db-feed-pq-grid">
+        {/* Live stream — narrower */}
         <div
           className="db-panel"
           style={{
             display: "flex",
             flexDirection: "column",
-            height: "calc(100vh - 280px)",
+            height: PANEL_HEIGHT,
             minHeight: 300,
           }}
         >
           <div className="db-ph" style={{ flexShrink: 0 }}>
-            <span className="db-pt">Live prediction stream</span>
+            <span className="db-pt">Live stream</span>
             <span
               className="db-ps"
               style={{ color: streamStatus === "live" ? "#30d158" : "#555" }}
             >
               {streamStatus === "live"
-                ? "● scoring · /stream"
+                ? "● /stream"
                 : streamStatus === "connecting"
                   ? "◌ connecting…"
                   : "✕ error"}
@@ -684,7 +721,7 @@ function OverviewTab({
           </div>
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
             {feed.length === 0 ? (
-              <div className="db-empty">Waiting for stream…</div>
+              <div className="db-empty">Waiting…</div>
             ) : (
               feed.map((c) => (
                 <div
@@ -697,11 +734,11 @@ function OverviewTab({
                         : "transparent",
                   }}
                 >
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div className="db-feed-id">{c.customer_id}</div>
                     <div className="db-feed-sub">
-                      {c.contract} · {Math.round(c.tenure)}mo · £
-                      {c.monthly_charges?.toFixed(2)}/mo
+                      {Math.round(c.tenure)}mo · £
+                      {c.monthly_charges?.toFixed(0)}
                     </div>
                   </div>
                   <RiskBadge level={c.risk_level} prob={c.churn_probability} />
@@ -712,31 +749,47 @@ function OverviewTab({
           </div>
           <div className="db-ftr" style={{ flexShrink: 0 }}>
             <div className="db-dot-r" />
-            <span>New prediction every ~2s</span>
+            <span>~2s per prediction</span>
           </div>
         </div>
 
-        {/* Priority action queue — scrollable table, click row for modal */}
+        {/* Priority queue — wider, with search */}
         <div
           className="db-panel"
           style={{
             display: "flex",
             flexDirection: "column",
-            height: "calc(100vh - 280px)",
+            height: PANEL_HEIGHT,
             minHeight: 300,
           }}
         >
+          {/* Header */}
           <div className="db-ph" style={{ flexShrink: 0 }}>
             <span className="db-pt">Priority action queue</span>
             <span className="db-ps">
-              {priorityRows.length > 0
-                ? `${priorityRows.length} customers · `
-                : ""}
               critical · high · medium · click row for details
             </span>
           </div>
 
-          {/* Scrollable table area */}
+          {/* Search bar — fixed below header */}
+          <div className="pq-search-wrap" style={{ flexShrink: 0 }}>
+            <input
+              className="pq-search"
+              placeholder="Search by customer ID…"
+              value={pqSearch}
+              onChange={(e) => setPqSearch(e.target.value)}
+            />
+            <span className="pq-count">
+              {priorityRows.length} /{" "}
+              {
+                priority.filter((c) =>
+                  ["critical", "high", "medium"].includes(c.risk_level),
+                ).length
+              }
+            </span>
+          </div>
+
+          {/* Scrollable table */}
           <div
             style={{
               flex: 1,
@@ -745,7 +798,9 @@ function OverviewTab({
               minHeight: 0,
             }}
           >
-            {priorityRows.length === 0 ? (
+            {priority.filter((c) =>
+              ["critical", "high", "medium"].includes(c.risk_level),
+            ).length === 0 ? (
               <div className="db-empty">
                 Building from stream…
                 <br />
@@ -760,13 +815,15 @@ function OverviewTab({
                   Medium / high / critical customers appear here
                 </span>
               </div>
+            ) : priorityRows.length === 0 ? (
+              <div className="db-empty">No results for "{pqSearch}"</div>
             ) : (
               <table className="pq-table">
                 <thead>
                   <tr>
                     {[
                       "#",
-                      "Customer",
+                      "Customer ID",
                       "Risk",
                       "Contract",
                       "Tenure",
@@ -814,10 +871,39 @@ function OverviewTab({
                             color: "#f0f0f0",
                           }}
                         >
-                          {c.customer_id}
+                          {/* Highlight matching search text */}
+                          {pqSearch &&
+                          c.customer_id
+                            .toLowerCase()
+                            .includes(pqSearch.toLowerCase())
+                            ? (() => {
+                                const idx = c.customer_id
+                                  .toLowerCase()
+                                  .indexOf(pqSearch.toLowerCase());
+                                return (
+                                  <>
+                                    {c.customer_id.slice(0, idx)}
+                                    <span
+                                      style={{
+                                        background: "#ff950033",
+                                        color: "#ff9500",
+                                        borderRadius: 2,
+                                        padding: "0 1px",
+                                      }}
+                                    >
+                                      {c.customer_id.slice(
+                                        idx,
+                                        idx + pqSearch.length,
+                                      )}
+                                    </span>
+                                    {c.customer_id.slice(idx + pqSearch.length)}
+                                  </>
+                                );
+                              })()
+                            : c.customer_id}
                         </td>
 
-                        {/* Risk badge */}
+                        {/* Risk */}
                         <td>
                           <RiskBadge
                             level={c.risk_level}
@@ -829,7 +915,7 @@ function OverviewTab({
                         <td
                           style={{
                             fontFamily: "monospace",
-                            fontSize: "clamp(10px,.9vw,11px)",
+                            fontSize: "clamp(10px,.85vw,11px)",
                             color: "#888",
                           }}
                         >
@@ -840,25 +926,25 @@ function OverviewTab({
                         <td
                           style={{
                             fontFamily: "monospace",
-                            fontSize: "clamp(10px,.9vw,11px)",
+                            fontSize: "clamp(10px,.85vw,11px)",
                             color: "#888",
                           }}
                         >
                           {Math.round(c.tenure)}mo
                         </td>
 
-                        {/* Monthly charges */}
+                        {/* Charges */}
                         <td
                           style={{
                             fontFamily: "monospace",
-                            fontSize: "clamp(10px,.9vw,11px)",
+                            fontSize: "clamp(10px,.85vw,11px)",
                             color: "#888",
                           }}
                         >
                           £{c.monthly_charges?.toFixed(2)}
                         </td>
 
-                        {/* Top SHAP driver with mini bar */}
+                        {/* Top SHAP driver + mini bar */}
                         <td>
                           {top ? (
                             <div
@@ -933,7 +1019,7 @@ function OverviewTab({
 function SearchTab({ customers }: { customers: Customer[] }) {
   const [query, setQuery] = useState("");
   const [riskFilter, setRiskFilter] = useState("");
-  const [contractFilter, setContractFilter] = useState("");
+  const [contractFilter, setContract] = useState("");
   const [sortKey, setSortKey] = useState<"risk" | "charges" | "tenure">("risk");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [page, setPage] = useState(0);
@@ -952,13 +1038,13 @@ function SearchTab({ customers }: { customers: Customer[] }) {
       );
     })
     .sort((a, b) => {
-      const get = (x: Customer) =>
+      const g = (x: Customer) =>
         sortKey === "risk"
           ? x.churn_probability
           : sortKey === "charges"
             ? x.monthly_charges
             : x.tenure;
-      return sortDir === "desc" ? get(b) - get(a) : get(a) - get(b);
+      return sortDir === "desc" ? g(b) - g(a) : g(a) - g(b);
     });
 
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -972,7 +1058,7 @@ function SearchTab({ customers }: { customers: Customer[] }) {
     }
     setPage(0);
   };
-  const sortIcon = (k: typeof sortKey) =>
+  const si = (k: typeof sortKey) =>
     sortKey === k ? (sortDir === "desc" ? " ↓" : " ↑") : " ↕";
 
   return (
@@ -1006,7 +1092,7 @@ function SearchTab({ customers }: { customers: Customer[] }) {
           className="db-select"
           value={contractFilter}
           onChange={(e) => {
-            setContractFilter(e.target.value);
+            setContract(e.target.value);
             setPage(0);
           }}
         >
@@ -1026,14 +1112,14 @@ function SearchTab({ customers }: { customers: Customer[] }) {
               <tr>
                 <th>Customer ID</th>
                 <th onClick={() => toggleSort("risk")}>
-                  Risk score{sortIcon("risk")}
+                  Risk score{si("risk")}
                 </th>
                 <th>Contract</th>
                 <th onClick={() => toggleSort("tenure")}>
-                  Tenure{sortIcon("tenure")}
+                  Tenure{si("tenure")}
                 </th>
                 <th onClick={() => toggleSort("charges")}>
-                  Monthly £{sortIcon("charges")}
+                  Monthly £{si("charges")}
                 </th>
                 <th>Top SHAP driver</th>
                 <th>Recommendation</th>
@@ -1148,7 +1234,7 @@ function SearchTab({ customers }: { customers: Customer[] }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TAB 2: PREDICT CUSTOMER
+// TAB 2: PREDICT
 // ════════════════════════════════════════════════════════════════════════════
 function PredictTab() {
   const [form, setForm] = useState({
@@ -1172,7 +1258,6 @@ function PredictTab() {
     MonthlyCharges: "94.50",
     TotalCharges: "189.00",
   });
-
   const [result, setResult] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1332,7 +1417,6 @@ function PredictTab() {
                 : "waiting for input…"}
           </span>
         </div>
-
         {!result && !error && !loading && (
           <div className="db-empty">
             Fill in customer details and
@@ -1429,7 +1513,7 @@ function PredictTab() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// ROOT DASHBOARD
+// ROOT
 // ════════════════════════════════════════════════════════════════════════════
 export default function Dashboard() {
   const [tab, setTab] = useState<Tab>(0);
@@ -1444,8 +1528,6 @@ export default function Dashboard() {
   const [streamStatus, setStreamStatus] = useState<
     "connecting" | "live" | "error"
   >("connecting");
-
-  // Tracks ALL customers ever seen by the stream — no cap
   const seenPriority = useRef<Map<string, Customer>>(new Map());
 
   useEffect(() => {
@@ -1456,30 +1538,25 @@ export default function Dashboard() {
         setSummary(d);
         stamp();
       })
-      .catch((e) => console.error("[/summary]", e));
+      .catch(console.error);
     fetch(`${API}/trend`)
       .then((r) => r.json())
       .then((d) => setTrend(d.trend ?? []))
-      .catch((e) => console.error("[/trend]", e));
+      .catch(console.error);
     fetch(`${API}/features`)
       .then((r) => r.json())
       .then((d) => setFeatures(d.features ?? []))
-      .catch((e) => console.error("[/features]", e));
+      .catch(console.error);
     fetch(`${API}/customers?limit=50`)
       .then((r) => r.json())
       .then((d) => setCustomers(d.customers ?? []))
-      .catch((e) => console.error("[/customers]", e));
+      .catch(console.error);
   }, []);
 
   useEffect(() => {
     const es = new EventSource(`${API}/stream`);
-    es.onopen = () => {
-      setStreamStatus("live");
-      console.log("[stream] connected");
-    };
-    es.onerror = () => {
-      setStreamStatus("error");
-    };
+    es.onopen = () => setStreamStatus("live");
+    es.onerror = () => setStreamStatus("error");
     es.onmessage = (e) => {
       try {
         const c: Customer = JSON.parse(e.data);
@@ -1487,17 +1564,15 @@ export default function Dashboard() {
         setNewestId(c.customer_id);
         setLastUpdated(new Date().toLocaleTimeString());
         setFeed((prev) => [c, ...prev].slice(0, 8));
-
-        // Store ALL customers — no .slice(0, 5) so priority queue shows everyone
         seenPriority.current.set(c.customer_id, c);
+        // No .slice — pass ALL customers, OverviewTab filters med/high/critical
         setPriority(
           [...seenPriority.current.values()].sort(
             (a, b) => b.churn_probability - a.churn_probability,
           ),
-          // ← no slice here — all records passed, OverviewTab filters to med/high/critical
         );
-      } catch (err) {
-        console.warn("[stream] parse error:", err);
+      } catch {
+        /* ignore */
       }
     };
     return () => es.close();
@@ -1530,7 +1605,7 @@ export default function Dashboard() {
             <span className="db-badge">Dashboard</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="db-stream-badge" style={streamBadgeStyle}>
+            <span className="db-sbadge" style={streamBadgeStyle}>
               {streamStatus === "live"
                 ? "● stream live"
                 : streamStatus === "connecting"
