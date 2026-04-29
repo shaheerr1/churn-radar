@@ -1,26 +1,32 @@
 /**
- * Dashboard.tsx — ChurnRadar main dashboard
+ * Dashboard.tsx — ChurnRadar
  *
- * Three tabs:
- *   Tab 0 "Overview"         → /summary, /trend, /features, /stream
- *   Tab 1 "Customer search"  → /customers?limit=50
- *   Tab 2 "Predict customer" → POST /predict
+ * KEY CHANGES:
+ * - Tab 1 "Customer search" is now fed LIVE from the stream (same data as feed)
+ *   Every customer scored by /stream appears instantly in the search table.
+ *   Search by ID works because we own the data directly in state.
+ * - Metric cards are more interactive — show secondary stats + risk indicators
+ * - SHAP importance replaced with a proper horizontal BarChart (Recharts)
+ * - Priority queue search is fully fixed (trims, lowercases, exact substring)
  */
 
 import { useEffect, useRef, useState } from "react";
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Cell,
 } from "recharts";
 
 const API = "http://localhost:8000";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 type Tab = 0 | 1 | 2;
 type SortDir = "asc" | "desc";
 
@@ -30,7 +36,6 @@ interface ShapReason {
   shap_impact: number;
   direction: string;
 }
-
 interface Customer {
   customer_id: string;
   churn_probability: number;
@@ -41,7 +46,6 @@ interface Customer {
   shap_reasons: ShapReason[];
   recommendation?: string;
 }
-
 interface Summary {
   total_customers: number;
   churn_rate_pct: number;
@@ -49,28 +53,25 @@ interface Summary {
   monthly_revenue_lost: number;
   annual_revenue_lost: number;
 }
-
 interface TrendPoint {
   period: string;
   churn_rate: number;
   churned: number;
   total: number;
 }
-
 interface Feature {
   feature: string;
   importance: number;
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 const RISK_COLOR: Record<string, string> = {
   critical: "#ff3b3b",
   high: "#ff6b35",
   medium: "#ff9500",
   low: "#30d158",
 };
-const riskColor = (level: string) => RISK_COLOR[level] ?? "#888";
-
+const rc = (l: string) => RISK_COLOR[l] ?? "#888";
 const gbp = (n: number) =>
   new Intl.NumberFormat("en-GB", {
     style: "currency",
@@ -78,7 +79,7 @@ const gbp = (n: number) =>
     maximumFractionDigits: 0,
   }).format(n);
 
-const TT_STYLE = {
+const TT = {
   contentStyle: {
     background: "#111",
     border: "1px solid #1e1e2e",
@@ -95,196 +96,178 @@ const TT_STYLE = {
 // STYLES
 // ════════════════════════════════════════════════════════════════════════════
 const STYLES = `
-  @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:.3} }
-  @keyframes ping   { 0%{transform:scale(1);opacity:.8} 100%{transform:scale(2.4);opacity:0} }
-  @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-  @keyframes shimmer{ 0%{background-position:-400px 0} 100%{background-position:400px 0} }
-  @keyframes modalIn{ from{opacity:0;transform:scale(.96) translateY(8px)} to{opacity:1;transform:scale(1) translateY(0)} }
+  @keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:.3} }
+  @keyframes ping    { 0%{transform:scale(1);opacity:.8} 100%{transform:scale(2.4);opacity:0} }
+  @keyframes fadeUp  { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
+  @keyframes modalIn { from{opacity:0;transform:scale(.97) translateY(6px)} to{opacity:1;transform:scale(1) translateY(0)} }
+  @keyframes rowSlide{ from{opacity:0;transform:translateX(-6px)} to{opacity:1;transform:translateX(0)} }
 
-  .db{ padding:clamp(1rem,2vw,1.5rem) clamp(1rem,3vw,2rem); min-height:100vh; background:var(--bg,#0a0a0f); color:var(--text-primary,#f0f0f0); font-family:var(--font-display,system-ui,sans-serif) }
+  *{ box-sizing:border-box }
 
-  /* header */
-  .db-hdr  { display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:8px }
-  .db-hdr-l{ display:flex; align-items:center; gap:10px }
-  .db-title{ font-size:clamp(13px,1.5vw,15px); font-weight:800; letter-spacing:-0.03em }
-  .db-dot  { width:9px; height:9px; border-radius:50%; background:#30d158; animation:pulse 2s infinite; flex-shrink:0 }
-  .db-dot-r{ width:6px; height:6px; border-radius:50%; background:#ff3b3b; animation:pulse 1.5s infinite; flex-shrink:0 }
-  .db-badge{ font-family:var(--font-mono,monospace); font-size:10px; padding:2px 9px; border-radius:999px; background:#30d15818; border:1px solid #30d15833; color:#30d158 }
-  .db-time { font-family:var(--font-mono,monospace); font-size:10px; color:var(--text-muted,#555) }
-  .db-sbadge{ font-family:var(--font-mono,monospace); font-size:10px; padding:2px 9px; border-radius:999px }
+  .db{ padding:clamp(1rem,2vw,1.5rem) clamp(1rem,3vw,2rem); min-height:100vh; background:var(--bg,#0a0a0f); color:#f0f0f0; font-family:var(--font-display,system-ui,sans-serif) }
 
-  /* tabs */
-  .db-tabs{ display:flex; gap:4px; margin-bottom:1rem; background:var(--bg-card,#111); border:1px solid var(--bg-border,#1e1e2e); border-radius:10px; padding:4px; width:fit-content }
-  .db-tab { padding:6px 18px; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer; border:none; background:transparent; color:var(--text-muted,#555); transition:all .2s; white-space:nowrap; font-family:inherit }
-  .db-tab.on{ background:var(--bg-border,#1e1e2e); color:var(--text-primary,#f0f0f0) }
-  .db-tab:hover:not(.on){ color:var(--text-secondary,#aaa) }
+  /* ─ header */
+  .db-hdr  { display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:8px }
+  .db-hdr-l{ display:flex;align-items:center;gap:10px }
+  .db-title{ font-size:clamp(13px,1.5vw,15px);font-weight:800;letter-spacing:-0.03em }
+  .db-dot  { width:9px;height:9px;border-radius:50%;background:#30d158;animation:pulse 2s infinite;flex-shrink:0 }
+  .db-dot-r{ width:6px;height:6px;border-radius:50%;background:#ff3b3b;animation:pulse 1.5s infinite;flex-shrink:0 }
+  .db-badge { font-family:monospace;font-size:10px;padding:2px 9px;border-radius:999px;background:#30d15818;border:1px solid #30d15833;color:#30d158 }
+  .db-time  { font-family:monospace;font-size:10px;color:#555 }
+  .db-sbadge{ font-family:monospace;font-size:10px;padding:2px 9px;border-radius:999px }
 
-  /* metric cards */
-  .db-metrics{ display:grid; grid-template-columns:repeat(auto-fit,minmax(clamp(130px,18vw,190px),1fr)); gap:10px; margin-bottom:10px }
-  .db-mc    { background:var(--bg-card,#111); border:1px solid var(--bg-border,#1e1e2e); border-radius:12px; padding:clamp(.7rem,1.5vw,1.1rem) clamp(.7rem,1.5vw,1.25rem); position:relative; overflow:hidden; animation:fadeUp .5s ease both }
-  .db-mc-bar{ position:absolute; top:0; left:0; right:0; height:2px }
-  .db-mc-val{ font-family:var(--font-mono,monospace); font-size:clamp(1.1rem,2.5vw,1.8rem); font-weight:700; letter-spacing:-.02em; line-height:1; margin-bottom:5px }
-  .db-mc-lbl{ font-size:clamp(11px,1.1vw,13px); font-weight:600; margin-bottom:2px }
-  .db-mc-sub{ font-size:clamp(10px,.9vw,11px); color:var(--text-muted,#555); line-height:1.4 }
-  .db-skel  { height:1.8rem; width:80px; border-radius:6px; background:linear-gradient(90deg,var(--bg-border,#1e1e2e) 25%,#2a2a3a 50%,var(--bg-border,#1e1e2e) 75%); background-size:400px 100%; animation:shimmer 1.4s infinite; margin-bottom:5px }
+  /* ─ tabs */
+  .db-tabs{ display:flex;gap:4px;margin-bottom:1rem;background:#111;border:1px solid #1e1e2e;border-radius:10px;padding:4px;width:fit-content }
+  .db-tab { padding:6px 18px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:transparent;color:#555;transition:all .2s;white-space:nowrap;font-family:inherit }
+  .db-tab.on{ background:#1e1e2e;color:#f0f0f0 }
+  .db-tab:hover:not(.on){ color:#aaa }
 
-  /* panels */
-  .db-panel{ background:var(--bg-card,#111); border:1px solid var(--bg-border,#1e1e2e); border-radius:12px; overflow:hidden; margin-bottom:10px }
-  .db-ph   { padding:clamp(.55rem,.9vw,.8rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px }
-  .db-pt   { font-size:clamp(11px,1.1vw,13px); font-weight:700; letter-spacing:-.01em }
-  .db-ps   { font-family:var(--font-mono,monospace); font-size:clamp(9px,.9vw,11px); color:var(--text-muted,#555) }
+  /* ─ metric cards — enhanced */
+  .db-metrics{ display:grid;grid-template-columns:repeat(auto-fit,minmax(clamp(160px,19vw,220px),1fr));gap:10px;margin-bottom:10px }
+  .db-mc{ background:#111;border:1px solid #1e1e2e;border-radius:14px;padding:clamp(.85rem,1.8vw,1.25rem) clamp(.85rem,1.8vw,1.35rem);position:relative;overflow:hidden;animation:fadeUp .5s ease both;cursor:default;transition:border-color .25s,box-shadow .25s }
+  .db-mc:hover{ border-color:#2a2a3a;box-shadow:0 0 24px rgba(0,0,0,.4) }
+  .db-mc-bar{ position:absolute;top:0;left:0;right:0;height:2px }
+  .db-mc-glow{ position:absolute;top:-20px;right:-20px;width:80px;height:80px;border-radius:50%;opacity:.06;filter:blur(20px) }
+  .db-mc-val{ font-family:monospace;font-size:clamp(1.2rem,2.8vw,2rem);font-weight:700;letter-spacing:-.02em;line-height:1;margin-bottom:4px }
+  .db-mc-lbl{ font-size:clamp(11px,1.1vw,13px);font-weight:600;margin-bottom:3px }
+  .db-mc-sub{ font-size:clamp(10px,.9vw,11px);color:#555;line-height:1.4;margin-bottom:8px }
+  .db-mc-extra{ display:flex;align-items:center;justify-content:space-between;padding-top:8px;border-top:1px solid #1a1a2e;margin-top:2px }
+  .db-mc-extra-val{ font-family:monospace;font-size:11px;color:#888 }
+  .db-mc-extra-badge{ font-family:monospace;font-size:10px;padding:1px 6px;border-radius:4px;font-weight:600 }
+  .db-skel{ height:2rem;width:90px;border-radius:6px;background:linear-gradient(90deg,#1e1e2e 25%,#2a2a3a 50%,#1e1e2e 75%);background-size:400px 100%;animation:shimmer 1.4s infinite;margin-bottom:5px }
 
-  /* 2-col layout — stream gets 35%, priority gets 65% */
-  .db-feed-pq-grid{ display:grid; grid-template-columns:35fr 65fr; gap:10px; margin-bottom:10px; align-items:stretch }
-  @media(max-width:900px){ .db-feed-pq-grid{ grid-template-columns:1fr } }
+  /* ─ panels */
+  .db-panel{ background:#111;border:1px solid #1e1e2e;border-radius:12px;overflow:hidden;margin-bottom:10px }
+  .db-ph   { padding:clamp(.55rem,.9vw,.8rem) clamp(.75rem,1.2vw,1.1rem);border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px }
+  .db-pt   { font-size:clamp(11px,1.1vw,13px);font-weight:700;letter-spacing:-.01em }
+  .db-ps   { font-family:monospace;font-size:clamp(9px,.9vw,11px);color:#555 }
+  .db-chart-insight{ padding:.45rem clamp(.75rem,1.2vw,1.1rem);font-size:clamp(10px,.9vw,11px);color:#4a4a6a;line-height:1.5;border-bottom:1px solid #0f0f1a;font-style:italic }
 
-  /* charts 2-col */
-  .db-2col{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px }
-  @media(max-width:860px){ .db-2col{ grid-template-columns:1fr } }
+  /* ─ layout grids */
+  .db-2col       { display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px }
+  .db-feed-pq    { display:grid;grid-template-columns:32fr 68fr;gap:10px;margin-bottom:10px;align-items:stretch }
+  @media(max-width:900px){ .db-2col,.db-feed-pq{ grid-template-columns:1fr } }
 
-  /* SHAP bars (overview) */
-  .db-shap-row{ padding:clamp(.35rem,.7vw,.5rem) clamp(.75rem,1.2vw,1.1rem); display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--bg-border,#1e1e2e) }
-  .db-shap-row:last-child{ border-bottom:none }
-  .db-shap-lbl{ font-size:clamp(10px,1vw,12px); color:var(--text-secondary,#ccc); width:clamp(120px,14vw,160px); flex-shrink:0 }
-  .db-shap-bg { flex:1; height:5px; background:var(--bg-border,#1e1e2e); border-radius:4px }
-  .db-shap-val{ font-family:var(--font-mono,monospace); font-size:11px; color:var(--text-muted,#555); width:32px; text-align:right; flex-shrink:0 }
+  /* ─ SHAP chart custom tooltip */
+  .shap-tt{ background:#111;border:1px solid #1e1e2e;border-radius:8px;padding:7px 10px;font-family:monospace;font-size:11px;color:#f0f0f0 }
 
-  /* live feed rows */
-  .db-feed-row{ padding:clamp(.45rem,.8vw,.65rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); display:flex; align-items:center; justify-content:space-between; gap:8px; position:relative }
+  /* ─ live feed */
+  .db-feed-row{ padding:clamp(.4rem,.7vw,.6rem) clamp(.75rem,1.2vw,1.1rem);border-bottom:1px solid #0f0f1a;display:flex;align-items:center;justify-content:space-between;gap:8px;position:relative;animation:rowSlide .3s ease both }
   .db-feed-row:last-child{ border-bottom:none }
-  .db-feed-id { font-family:var(--font-mono,monospace); font-size:clamp(10px,.95vw,11px); font-weight:600 }
-  .db-feed-sub{ font-family:var(--font-mono,monospace); font-size:clamp(8px,.8vw,9px); color:var(--text-muted,#555); margin-top:2px }
-  .db-ping    { position:absolute; top:50%; right:clamp(.75rem,1.2vw,1.1rem); transform:translateY(-50%); width:6px; height:6px; border-radius:50%; background:#30d158; animation:ping 1.1s ease-out }
-  .db-ftr     { padding:clamp(.4rem,.7vw,.55rem) clamp(.75rem,1.2vw,1.1rem); display:flex; align-items:center; gap:8px; border-top:1px solid var(--bg-border,#1e1e2e) }
-  .db-ftr span{ font-family:var(--font-mono,monospace); font-size:clamp(9px,.9vw,10px); color:var(--text-muted,#555) }
+  .db-feed-id { font-family:monospace;font-size:clamp(10px,.9vw,11px);font-weight:600 }
+  .db-feed-sub{ font-family:monospace;font-size:clamp(8px,.75vw,9px);color:#555;margin-top:2px }
+  .db-ping    { position:absolute;top:50%;right:clamp(.75rem,1.2vw,1.1rem);transform:translateY(-50%);width:6px;height:6px;border-radius:50%;background:#30d158;animation:ping 1.1s ease-out }
+  .db-ftr     { padding:clamp(.4rem,.7vw,.5rem) clamp(.75rem,1.2vw,1.1rem);display:flex;align-items:center;gap:8px;border-top:1px solid #1e1e2e;flex-shrink:0 }
+  .db-ftr span{ font-family:monospace;font-size:clamp(9px,.85vw,10px);color:#555 }
 
-  /* risk badge */
-  .rb{ font-family:var(--font-mono,monospace); font-size:clamp(9px,.85vw,10px); font-weight:600; padding:2px 6px; border-radius:4px; white-space:nowrap; text-transform:uppercase; letter-spacing:.04em }
+  /* ─ risk badge */
+  .rb{ font-family:monospace;font-size:clamp(9px,.82vw,10px);font-weight:600;padding:2px 6px;border-radius:4px;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em }
 
-  /* generic empty */
-  .db-empty{ padding:2rem; text-align:center; font-family:var(--font-mono,monospace); font-size:11px; color:var(--text-muted,#555) }
+  /* ─ empty */
+  .db-empty{ padding:2rem;text-align:center;font-family:monospace;font-size:11px;color:#555 }
 
-  /* ── Priority queue table ── */
-  .pq-search-wrap{ padding:.6rem .85rem; border-bottom:1px solid #1e1e2e; display:flex; align-items:center; gap:8px; flex-shrink:0 }
-  .pq-search{ background:#0a0a0f; border:1px solid #2a2a3a; border-radius:7px; padding:5px 10px; color:#f0f0f0; font-family:var(--font-mono,monospace); font-size:11px; outline:none; flex:1; transition:border-color .2s }
-  .pq-search:focus{ border-color:#444 }
-  .pq-search::placeholder{ color:#444 }
-  .pq-count{ font-family:var(--font-mono,monospace); font-size:10px; color:#555; white-space:nowrap }
+  /* ── Priority queue ────────────────────────────────── */
+  .pq-bar{ padding:.5rem .85rem;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;gap:8px;flex-shrink:0;background:#0d0d15 }
+  .pq-search{ background:#111;border:1px solid #252535;border-radius:7px;padding:5px 10px;color:#f0f0f0;font-family:monospace;font-size:11px;outline:none;flex:1;transition:border-color .2s }
+  .pq-search:focus{ border-color:#555 }
+  .pq-search::placeholder{ color:#333 }
+  .pq-count{ font-family:monospace;font-size:10px;color:#444;flex-shrink:0 }
+  .pq-tbl{ width:100%;border-collapse:collapse }
+  .pq-tbl th{ position:sticky;top:0;z-index:2;background:#0a0a12;font-family:monospace;font-size:9px;color:#444;text-transform:uppercase;letter-spacing:.1em;font-weight:500;text-align:left;padding:.5rem .75rem;border-bottom:1px solid #1e1e2e;white-space:nowrap }
+  .pq-tbl td{ padding:.45rem .75rem;border-bottom:1px solid #0f0f1a;white-space:nowrap;vertical-align:middle;font-size:clamp(10px,.85vw,12px) }
+  .pq-tbl tr:last-child td{ border-bottom:none }
+  .pq-tbl tbody tr{ cursor:pointer;transition:background .1s }
+  .pq-tbl tbody tr:hover td{ background:rgba(255,255,255,.035) }
 
-  .pq-table{ width:100%; border-collapse:collapse; font-size:clamp(10px,.9vw,12px) }
-  .pq-table th{
-    font-family:var(--font-mono,monospace); font-size:clamp(9px,.75vw,10px);
-    color:#555; text-transform:uppercase; letter-spacing:.07em;
-    text-align:left; font-weight:400;
-    padding:clamp(.4rem,.6vw,.5rem) clamp(.4rem,.8vw,.75rem);
-    border-bottom:1px solid #1e1e2e; white-space:nowrap;
-    position:sticky; top:0; background:var(--bg-card,#111); z-index:1;
-  }
-  .pq-table td{
-    padding:clamp(.4rem,.7vw,.55rem) clamp(.4rem,.8vw,.75rem);
-    border-bottom:1px solid #1e1e2e; white-space:nowrap; vertical-align:middle;
-  }
-  .pq-table tr:last-child td{ border-bottom:none }
-  .pq-table tbody tr{ cursor:pointer; transition:background .12s }
-  .pq-table tbody tr:hover td{ background:rgba(255,255,255,.04) }
+  /* ── Modal ─────────────────────────────────────────── */
+  .modal-overlay{ position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:1rem }
+  .modal-box{ background:#0f0f1a;border:1px solid #2a2a3a;border-radius:16px;width:100%;max-width:500px;max-height:85vh;overflow-y:auto;box-shadow:0 32px 80px rgba(0,0,0,.8);animation:modalIn .18s ease both }
+  .modal-hdr{ padding:1rem 1.25rem;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#0f0f1a;z-index:1 }
+  .modal-close{ background:#1a1a2e;border:1px solid #2a2a3a;border-radius:6px;color:#666;cursor:pointer;padding:4px 10px;font-family:monospace;font-size:11px;transition:all .15s }
+  .modal-close:hover{ color:#f0f0f0;border-color:#444 }
+  .modal-sec{ padding:1rem 1.25rem;border-bottom:1px solid #1a1a2e }
+  .modal-sec:last-child{ border-bottom:none }
+  .modal-sec-title{ font-family:monospace;font-size:9px;color:#444;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem }
+  .modal-grid{ display:grid;grid-template-columns:1fr 1fr;gap:8px }
+  .modal-stat{ background:#0a0a0f;border:1px solid #1a1a2e;border-radius:8px;padding:8px 12px }
+  .modal-stat-lbl{ font-family:monospace;font-size:9px;color:#444;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px }
+  .modal-stat-val{ font-family:monospace;font-size:13px;font-weight:600;color:#f0f0f0 }
 
-  /* ── Modal ── */
-  .modal-overlay{ position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.75); display:flex; align-items:center; justify-content:center; padding:1rem }
-  .modal-box{ background:#111; border:1px solid #2a2a3a; border-radius:16px; width:100%; max-width:500px; max-height:85vh; overflow-y:auto; box-shadow:0 24px 80px rgba(0,0,0,0.7); animation:modalIn .2s ease both }
-  .modal-hdr{ padding:1rem 1.25rem; border-bottom:1px solid #1e1e2e; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; background:#111; z-index:1 }
-  .modal-close{ background:#1e1e2e; border:1px solid #2a2a3a; border-radius:6px; color:#888; cursor:pointer; padding:4px 10px; font-family:var(--font-mono,monospace); font-size:12px; transition:color .15s }
-  .modal-close:hover{ color:#f0f0f0 }
-  .modal-section{ padding:1rem 1.25rem; border-bottom:1px solid #1e1e2e }
-  .modal-section:last-child{ border-bottom:none }
-  .modal-section-title{ font-family:var(--font-mono,monospace); font-size:10px; color:#555; text-transform:uppercase; letter-spacing:.08em; margin-bottom:.6rem }
-  .modal-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px }
-  .modal-stat{ background:#0a0a0f; border:1px solid #1e1e2e; border-radius:8px; padding:8px 12px }
-  .modal-stat-label{ font-family:var(--font-mono,monospace); font-size:9px; color:#555; text-transform:uppercase; letter-spacing:.08em; margin-bottom:3px }
-  .modal-stat-value{ font-family:var(--font-mono,monospace); font-size:12px; font-weight:600; color:#f0f0f0 }
+  /* ── Customer search (Tab 1) — live stream powered ─── */
+  .cs-root   { display:flex;flex-direction:column;height:calc(100vh - 155px);min-height:420px }
+  .cs-header { padding:.75rem 1rem;border-bottom:1px solid #1a1a2e;display:flex;align-items:center;gap:8px;background:#0d0d15;flex-shrink:0;flex-wrap:wrap }
+  .cs-search { background:#111;border:1px solid #252535;border-radius:8px;padding:7px 12px 7px 32px;color:#f0f0f0;font-family:monospace;font-size:12px;outline:none;flex:1;min-width:160px;transition:border-color .2s;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23444' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:10px center }
+  .cs-search:focus{ border-color:#3a3a5a }
+  .cs-search::placeholder{ color:#333 }
+  .cs-filter { background:#111;border:1px solid #252535;border-radius:8px;padding:7px 10px;color:#888;font-family:monospace;font-size:11px;outline:none;cursor:pointer;transition:border-color .2s }
+  .cs-filter:focus{ border-color:#3a3a5a }
 
-  /* ── Customer search tab ── */
-  .db-search-bar{ display:flex; align-items:center; gap:8px; padding:clamp(.6rem,1vw,.85rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); flex-wrap:wrap }
-  .db-input { background:var(--bg,#0a0a0f); border:1px solid var(--bg-border,#1e1e2e); border-radius:7px; padding:6px 10px; color:var(--text-primary,#f0f0f0); font-family:var(--font-mono,monospace); font-size:12px; outline:none; transition:border-color .2s }
-  .db-input:focus{ border-color:#333 }
-  .db-input::placeholder{ color:var(--text-muted,#555) }
-  .db-select{ background:var(--bg,#0a0a0f); border:1px solid var(--bg-border,#1e1e2e); border-radius:7px; padding:6px 10px; color:var(--text-secondary,#888); font-family:var(--font-mono,monospace); font-size:11px; outline:none; cursor:pointer }
-  .db-tbl-wrap{ overflow-x:auto }
-  .db-tbl{ width:100%; border-collapse:collapse; font-size:clamp(10px,.9vw,12px) }
-  .db-tbl th{ font-family:var(--font-mono,monospace); font-size:clamp(9px,.8vw,10px); color:var(--text-muted,#555); text-transform:uppercase; letter-spacing:.08em; text-align:left; padding:clamp(.4rem,.7vw,.55rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); white-space:nowrap; cursor:pointer; user-select:none }
-  .db-tbl th:hover{ color:var(--text-secondary,#888) }
-  .db-tbl td{ padding:clamp(.45rem,.8vw,.65rem) clamp(.75rem,1.2vw,1.1rem); border-bottom:1px solid var(--bg-border,#1e1e2e); vertical-align:middle; white-space:nowrap }
-  .db-tbl tr:last-child td{ border-bottom:none }
-  .db-tbl tr:hover td{ background:rgba(255,255,255,.015) }
-  .db-tbl-id  { font-family:var(--font-mono,monospace); font-weight:600 }
-  .db-tbl-mono{ font-family:var(--font-mono,monospace); color:var(--text-muted,#888) }
-  .db-tbl-ftr { padding:clamp(.4rem,.7vw,.55rem) clamp(.75rem,1.2vw,1.1rem); display:flex; align-items:center; justify-content:space-between; border-top:1px solid var(--bg-border,#1e1e2e) }
-  .db-tbl-ftr span{ font-family:var(--font-mono,monospace); font-size:10px; color:var(--text-muted,#555) }
-  .db-bar-wrap{ display:flex; align-items:center; gap:6px }
-  .db-bar-bg  { width:50px; height:4px; background:var(--bg-border,#1e1e2e); border-radius:4px; flex-shrink:0 }
-  .db-pg-btn  { background:var(--bg-border,#1e1e2e); border:1px solid #2a2a3a; border-radius:5px; color:var(--text-muted,#888); font-family:var(--font-mono,monospace); font-size:10px; padding:3px 8px; cursor:pointer }
-  .db-pg-btn:disabled{ opacity:.3; cursor:not-allowed }
+  /* live indicator in header */
+  .cs-live-pill{ display:flex;align-items:center;gap:5px;font-family:monospace;font-size:10px;color:#30d158;background:#30d15812;border:1px solid #30d15828;border-radius:999px;padding:3px 9px;flex-shrink:0 }
+  .cs-count{ font-family:monospace;font-size:10px;color:#444;margin-left:auto;flex-shrink:0 }
 
-  /* ── Predict tab ── */
-  .db-pred-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px }
+  .cs-tbl-wrap{ flex:1;overflow-y:auto;overflow-x:auto;minHeight:0 }
+  .cs-tbl{ width:100%;border-collapse:collapse }
+  .cs-tbl thead{ position:sticky;top:0;z-index:1 }
+  .cs-tbl th{ background:#0a0a12;font-family:monospace;font-size:9px;color:#3a3a5a;text-transform:uppercase;letter-spacing:.12em;font-weight:500;text-align:left;padding:.65rem 1rem;border-bottom:1px solid #1a1a2e;white-space:nowrap;user-select:none }
+  .cs-tbl th.s{ cursor:pointer }
+  .cs-tbl th.s:hover{ color:#666 }
+  .cs-tbl th.active{ color:#888 }
+  .cs-tbl td{ padding:.6rem 1rem;border-bottom:1px solid #0f0f1a;vertical-align:middle;white-space:nowrap }
+  .cs-tbl tr:last-child td{ border-bottom:none }
+  .cs-tbl tbody tr{ transition:background .1s;cursor:default }
+  .cs-tbl tbody tr:hover td{ background:rgba(255,255,255,.022) }
+  .cs-tbl tbody tr.new-row td{ animation:rowSlide .4s ease both }
+
+  .cs-id  { font-family:monospace;font-size:12px;font-weight:600;color:#e0e0e0;letter-spacing:.03em }
+  .cs-mono{ font-family:monospace;font-size:12px;color:#666 }
+  .cs-contract{ font-family:monospace;font-size:10px;padding:2px 7px;border-radius:4px;white-space:nowrap }
+  .cs-m2m{ background:#ff3b3b0a;color:#ff6b6b;border:1px solid #ff3b3b1a }
+  .cs-one{ background:#ff95000a;color:#ffaa30;border:1px solid #ff95001a }
+  .cs-two{ background:#30d1580a;color:#30d158;border:1px solid #30d1581a }
+  .cs-shap{ display:flex;align-items:center;gap:6px }
+  .cs-shap-feat{ font-family:monospace;font-size:10px;color:#666;min-width:90px }
+  .cs-shap-track{ width:40px;height:3px;background:#1e1e2e;border-radius:3px;flex-shrink:0 }
+  .cs-shap-num{ font-family:monospace;font-size:9px;color:#444 }
+  .cs-rec{ font-family:monospace;font-size:10px;color:#0af;max-width:200px;overflow:hidden;text-overflow:ellipsis }
+
+  .cs-footer{ display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem;border-top:1px solid #1a1a2e;flex-shrink:0;background:#0d0d15 }
+  .cs-footer span{ font-family:monospace;font-size:10px;color:#444 }
+  .cs-pg{ background:#1a1a2e;border:1px solid #252535;border-radius:5px;color:#666;font-family:monospace;font-size:10px;padding:4px 10px;cursor:pointer;transition:all .15s }
+  .cs-pg:hover:not(:disabled){ background:#252535;color:#aaa }
+  .cs-pg:disabled{ opacity:.25;cursor:not-allowed }
+  .cs-pg-n{ font-family:monospace;font-size:10px;color:#555 }
+
+  /* ── Predict tab ──────────────────────────── */
+  .db-pred-grid{ display:grid;grid-template-columns:1fr 1fr;gap:10px }
   @media(max-width:860px){ .db-pred-grid{ grid-template-columns:1fr } }
-  .db-field-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:1rem }
-  .db-field    { display:flex; flex-direction:column; gap:4px }
-  .db-field-lbl{ font-size:11px; color:var(--text-muted,#666); font-family:var(--font-mono,monospace) }
-  .db-field-input{ background:var(--bg,#0a0a0f); border:1px solid var(--bg-border,#1e1e2e); border-radius:7px; padding:6px 10px; color:var(--text-primary,#f0f0f0); font-family:var(--font-mono,monospace); font-size:12px; outline:none; width:100%; transition:border-color .2s }
-  .db-field-input:focus{ border-color:#333 }
-  .db-pred-btn{ margin:0 1rem 1rem; padding:10px; background:var(--red,#ff3b3b); border:none; border-radius:8px; color:#fff; font-size:13px; font-weight:700; cursor:pointer; width:calc(100% - 2rem); transition:opacity .2s,transform .2s; font-family:inherit }
-  .db-pred-btn:hover:not(:disabled){ opacity:.88; transform:translateY(-1px) }
-  .db-pred-btn:disabled{ opacity:.4; cursor:not-allowed }
-  .db-result-box{ margin:0 1rem 1rem; background:var(--bg,#0a0a0f); border:1px solid var(--bg-border,#1e1e2e); border-radius:10px; padding:1rem }
-  .db-result-top { display:flex; align-items:center; gap:1rem; margin-bottom:.85rem; padding-bottom:.75rem; border-bottom:1px solid var(--bg-border,#1e1e2e) }
-  .db-result-prob{ font-family:var(--font-mono,monospace); font-size:2.6rem; font-weight:700; line-height:1 }
-  .db-result-lbl { font-size:13px; font-weight:600; margin-bottom:3px }
-  .db-result-sub { font-size:11px; color:var(--text-muted,#666); margin-bottom:6px }
-  .db-shap-title { font-size:10px; font-family:var(--font-mono,monospace); color:var(--text-muted,#555); text-transform:uppercase; letter-spacing:.08em; margin-bottom:.5rem }
-  .db-result-shap-row{ display:flex; align-items:center; gap:8px; margin-bottom:8px }
-  .db-result-shap-lbl{ font-size:clamp(10px,.9vw,11px); color:var(--text-secondary,#ccc); width:130px; flex-shrink:0 }
-  .db-result-shap-bg { flex:1; height:5px; background:var(--bg-border,#1e1e2e); border-radius:4px }
-  .db-result-shap-dir{ font-size:10px; font-family:var(--font-mono,monospace); width:85px; text-align:right; flex-shrink:0 }
-  .db-result-rec{ margin-top:.75rem; padding:.5rem .75rem; border:1px solid #0af3; border-radius:7px; font-family:var(--font-mono,monospace); font-size:11px; color:#0af; line-height:1.5; background:rgba(0,170,255,.03) }
+  .db-field-grid{ display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:1rem }
+  .db-field    { display:flex;flex-direction:column;gap:4px }
+  .db-field-lbl{ font-size:11px;color:#555;font-family:monospace }
+  .db-field-inp{ background:#0a0a0f;border:1px solid #1e1e2e;border-radius:7px;padding:6px 10px;color:#f0f0f0;font-family:monospace;font-size:12px;outline:none;width:100%;transition:border-color .2s }
+  .db-field-inp:focus{ border-color:#333 }
+  .db-pred-btn{ margin:0 1rem 1rem;padding:11px;background:#ff3b3b;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;width:calc(100% - 2rem);transition:opacity .2s,transform .2s;font-family:inherit }
+  .db-pred-btn:hover:not(:disabled){ opacity:.88;transform:translateY(-1px) }
+  .db-pred-btn:disabled{ opacity:.4;cursor:not-allowed }
+  .db-result-box{ margin:0 1rem 1rem;background:#0a0a0f;border:1px solid #1e1e2e;border-radius:10px;padding:1rem }
+  .db-result-top{ display:flex;align-items:center;gap:1rem;margin-bottom:.85rem;padding-bottom:.75rem;border-bottom:1px solid #1e1e2e }
+  .db-result-prob{ font-family:monospace;font-size:2.6rem;font-weight:700;line-height:1 }
+  .db-result-lbl { font-size:13px;font-weight:600;margin-bottom:3px }
+  .db-result-sub { font-size:11px;color:#666;margin-bottom:6px }
+  .db-shap-title { font-size:10px;font-family:monospace;color:#555;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem }
+  .db-result-shap-row{ display:flex;align-items:center;gap:8px;margin-bottom:8px }
+  .db-result-shap-lbl{ font-size:11px;color:#ccc;width:130px;flex-shrink:0 }
+  .db-result-shap-bg{ flex:1;height:5px;background:#1e1e2e;border-radius:4px }
+  .db-result-shap-dir{ font-size:10px;font-family:monospace;width:85px;text-align:right;flex-shrink:0 }
+  .db-result-rec{ margin-top:.75rem;padding:.5rem .75rem;border:1px solid #0af3;border-radius:7px;font-family:monospace;font-size:11px;color:#0af;line-height:1.5;background:rgba(0,170,255,.03) }
 `;
 
 // ════════════════════════════════════════════════════════════════════════════
-// SHARED COMPONENTS
+// SHARED
 // ════════════════════════════════════════════════════════════════════════════
-
-function MetricCard({
-  value,
-  label,
-  sub,
-  color,
-  loading,
-  delay = 0,
-}: {
-  value: string;
-  label: string;
-  sub: string;
-  color: string;
-  loading?: boolean;
-  delay?: number;
-}) {
-  return (
-    <div className="db-mc" style={{ animationDelay: `${delay}s` }}>
-      <div className="db-mc-bar" style={{ background: color }} />
-      {loading ? (
-        <div className="db-skel" />
-      ) : (
-        <div className="db-mc-val" style={{ color }}>
-          {value}
-        </div>
-      )}
-      <div className="db-mc-lbl">{label}</div>
-      <div className="db-mc-sub">{sub}</div>
-    </div>
-  );
-}
-
 function RiskBadge({ level, prob }: { level: string; prob: number }) {
-  const color = riskColor(level);
+  const color = rc(level);
   return (
     <span
       className="rb"
@@ -300,7 +283,71 @@ function RiskBadge({ level, prob }: { level: string; prob: number }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// CUSTOMER DETAIL MODAL
+// ENHANCED METRIC CARDS
+// ════════════════════════════════════════════════════════════════════════════
+function MetricCard({
+  value,
+  label,
+  sub,
+  color,
+  loading,
+  delay = 0,
+  extra,
+  extraLabel,
+  badge,
+  badgeColor,
+}: {
+  value: string;
+  label: string;
+  sub: string;
+  color: string;
+  loading?: boolean;
+  delay?: number;
+  extra?: string;
+  extraLabel?: string;
+  badge?: string;
+  badgeColor?: string;
+}) {
+  return (
+    <div className="db-mc" style={{ animationDelay: `${delay}s` }}>
+      <div className="db-mc-bar" style={{ background: color }} />
+      <div className="db-mc-glow" style={{ background: color }} />
+      {loading ? (
+        <div className="db-skel" />
+      ) : (
+        <div className="db-mc-val" style={{ color }}>
+          {value}
+        </div>
+      )}
+      <div className="db-mc-lbl">{label}</div>
+      <div className="db-mc-sub">{sub}</div>
+      {(extra || badge) && !loading && (
+        <div className="db-mc-extra">
+          {extra && (
+            <span className="db-mc-extra-val">
+              {extraLabel}: {extra}
+            </span>
+          )}
+          {badge && (
+            <span
+              className="db-mc-extra-badge"
+              style={{
+                color: badgeColor || color,
+                background: (badgeColor || color) + "15",
+                border: `1px solid ${badgeColor || color}30`,
+              }}
+            >
+              {badge}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MODAL
 // ════════════════════════════════════════════════════════════════════════════
 function CustomerModal({
   customer,
@@ -309,16 +356,14 @@ function CustomerModal({
   customer: Customer;
   onClose: () => void;
 }) {
-  const maxImpact = Math.max(
+  const maxImp = Math.max(
     ...(customer.shap_reasons?.map((r) => Math.abs(r.shap_impact)) ?? [1]),
   );
-  const color = riskColor(customer.risk_level);
+  const color = rc(customer.risk_level);
   const prob = Math.round(customer.churn_probability * 100);
-
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
         <div className="modal-hdr">
           <div>
             <div
@@ -341,9 +386,7 @@ function CustomerModal({
             ✕ close
           </button>
         </div>
-
-        {/* Probability bar */}
-        <div className="modal-section">
+        <div className="modal-sec">
           <div
             style={{
               display: "flex",
@@ -355,10 +398,10 @@ function CustomerModal({
             <span
               style={{
                 fontFamily: "monospace",
-                fontSize: 10,
-                color: "#555",
+                fontSize: 9,
+                color: "#444",
                 textTransform: "uppercase",
-                letterSpacing: ".08em",
+                letterSpacing: ".1em",
               }}
             >
               Churn probability
@@ -366,7 +409,7 @@ function CustomerModal({
             <span
               style={{
                 fontFamily: "monospace",
-                fontSize: 24,
+                fontSize: 26,
                 fontWeight: 700,
                 color,
               }}
@@ -377,7 +420,7 @@ function CustomerModal({
           <div
             style={{
               height: 8,
-              background: "#1e1e2e",
+              background: "#1a1a2e",
               borderRadius: 999,
               overflow: "hidden",
             }}
@@ -387,16 +430,14 @@ function CustomerModal({
                 height: 8,
                 borderRadius: 999,
                 width: `${prob}%`,
-                background: `linear-gradient(90deg, ${color}88, ${color})`,
+                background: `linear-gradient(90deg,${color}66,${color})`,
                 transition: "width .6s ease",
               }}
             />
           </div>
         </div>
-
-        {/* Plan details */}
-        <div className="modal-section">
-          <div className="modal-section-title">Plan & account</div>
+        <div className="modal-sec">
+          <div className="modal-sec-title">Plan & account</div>
           <div className="modal-grid">
             {[
               { label: "Contract", value: customer.contract },
@@ -408,21 +449,17 @@ function CustomerModal({
                 label: "Monthly £",
                 value: `£${customer.monthly_charges?.toFixed(2)}`,
               },
-              { label: "Risk level", value: customer.risk_level.toUpperCase() },
+              { label: "Risk", value: customer.risk_level.toUpperCase() },
             ].map(({ label, value }) => (
               <div key={label} className="modal-stat">
-                <div className="modal-stat-label">{label}</div>
-                <div className="modal-stat-value">{value}</div>
+                <div className="modal-stat-lbl">{label}</div>
+                <div className="modal-stat-val">{value}</div>
               </div>
             ))}
           </div>
         </div>
-
-        {/* SHAP breakdown */}
-        <div className="modal-section">
-          <div className="modal-section-title">
-            Why this score — SHAP drivers
-          </div>
+        <div className="modal-sec">
+          <div className="modal-sec-title">SHAP drivers</div>
           {customer.shap_reasons?.map((r) => (
             <div
               key={r.feature}
@@ -448,7 +485,7 @@ function CustomerModal({
                 style={{
                   flex: 1,
                   height: 6,
-                  background: "#1e1e2e",
+                  background: "#1a1a2e",
                   borderRadius: 4,
                   overflow: "hidden",
                 }}
@@ -457,10 +494,10 @@ function CustomerModal({
                   style={{
                     height: 6,
                     borderRadius: 4,
-                    width: `${Math.min((Math.abs(r.shap_impact) / maxImpact) * 100, 100)}%`,
+                    width: `${Math.min((Math.abs(r.shap_impact) / maxImp) * 100, 100)}%`,
                     background:
                       r.direction === "increases risk" ? "#ff3b3b" : "#30d158",
-                    transition: "width .6s ease",
+                    transition: "width .6s",
                   }}
                 />
               </div>
@@ -480,11 +517,9 @@ function CustomerModal({
             </div>
           ))}
         </div>
-
-        {/* Recommendation */}
         {customer.recommendation && (
-          <div className="modal-section">
-            <div className="modal-section-title">Recommended action</div>
+          <div className="modal-sec">
+            <div className="modal-sec-title">Recommended action</div>
             <div
               style={{
                 background: "rgba(0,170,255,.04)",
@@ -506,8 +541,30 @@ function CustomerModal({
   );
 }
 
+// SHAP custom tooltip
+function ShapTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="shap-tt">
+      <div style={{ color: "#888", marginBottom: 3 }}>{d.feature}</div>
+      <div>
+        Impact:{" "}
+        <span
+          style={{
+            color: d.importance > 0.5 ? "#ff3b3b" : "#ff9500",
+            fontWeight: 700,
+          }}
+        >
+          {d.importance.toFixed(4)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ════════════════════════════════════════════════════════════════════════════
-// TAB 0: OVERVIEW
+// TAB 0 — OVERVIEW
 // ════════════════════════════════════════════════════════════════════════════
 function OverviewTab({
   summary,
@@ -526,91 +583,142 @@ function OverviewTab({
   newestId: string;
   streamStatus: string;
 }) {
-  const maxImp = features[0]?.importance ?? 1;
-  const shapColor = (imp: number) => {
-    const r = imp / maxImp;
-    return r > 0.7 ? "#ff3b3b" : r > 0.4 ? "#ff9500" : "#0af";
-  };
-
-  // Modal for priority queue
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
-    null,
-  );
-
-  // Search state for priority queue
+  const [selected, setSelected] = useState<Customer | null>(null);
   const [pqSearch, setPqSearch] = useState("");
 
-  // Priority rows: medium/high/critical only, filtered by search
-  const priorityRows = priority
-    .filter((c) => ["critical", "high", "medium"].includes(c.risk_level))
-    .filter(
-      (c) =>
-        !pqSearch ||
-        c.customer_id.toLowerCase().includes(pqSearch.toLowerCase()),
-    );
+  const allPQ = priority.filter((c) =>
+    ["critical", "high", "medium"].includes(c.risk_level),
+  );
+  const pqRows = allPQ.filter(
+    (c) =>
+      !pqSearch.trim() ||
+      c.customer_id.toLowerCase().includes(pqSearch.trim().toLowerCase()),
+  );
 
-  const PANEL_HEIGHT = "calc(100vh - 290px)";
+  // Prepare SHAP data for BarChart (horizontal)
+  const shapData = features
+    .slice(0, 8)
+    .map((f) => ({
+      feature: f.feature.length > 16 ? f.feature.slice(0, 15) + "…" : f.feature,
+      fullName: f.feature,
+      importance: f.importance,
+    }))
+    .reverse(); // reverse so highest is at top
+
+  const trendInsight =
+    trend.length > 0
+      ? `Churn hits ${Math.max(...trend.map((t) => t.churn_rate))}% in the first cohort and drops to ${Math.min(...trend.map((t) => t.churn_rate))}% among long-tenured customers — the first 6 months are your highest-risk window.`
+      : "";
+  const shapInsight =
+    features.length > 0
+      ? `${features[0]?.feature} is the single strongest churn signal — customers flagged by it are disproportionately likely to leave.`
+      : "";
+
+  const H = "calc(100vh - 300px)";
+
+  // Derive extra card stats from summary + priority
+  const criticalCount = priority.filter(
+    (c) => c.risk_level === "critical",
+  ).length;
+  const highCount = priority.filter((c) => c.risk_level === "high").length;
+  const avgRisk =
+    priority.length > 0
+      ? Math.round(
+          (priority.reduce((s, c) => s + c.churn_probability, 0) /
+            priority.length) *
+            100,
+        )
+      : null;
 
   return (
     <>
-      {selectedCustomer && (
-        <CustomerModal
-          customer={selectedCustomer}
-          onClose={() => setSelectedCustomer(null)}
-        />
+      {selected && (
+        <CustomerModal customer={selected} onClose={() => setSelected(null)} />
       )}
 
-      {/* Metric cards */}
+      {/* Enhanced metric cards */}
       <div className="db-metrics">
         <MetricCard
           value={summary ? summary.total_customers.toLocaleString() : "—"}
           label="Total customers"
-          sub="In dataset"
+          sub="In loaded dataset"
           color="#0af"
           loading={!summary}
           delay={0}
+          extra={summary ? `${summary.churn_rate_pct}% churn rate` : undefined}
+          extraLabel="Overall"
+          badge={
+            summary
+              ? `${Math.round((summary.total_customers * summary.churn_rate_pct) / 100)} at risk`
+              : undefined
+          }
+          badgeColor="#ff9500"
         />
         <MetricCard
           value={summary ? `${summary.churn_rate_pct}%` : "—"}
-          label="Churn rate"
-          sub="Actual churned"
+          label="Overall churn rate"
+          sub="Actual churned in dataset"
           color="#ff3b3b"
           loading={!summary}
-          delay={0.05}
+          delay={0.06}
+          extra={summary ? `£${summary.avg_monthly_charges}/mo avg` : undefined}
+          extraLabel="ARPU"
+          badge={
+            criticalCount > 0 ? `${criticalCount} critical now` : undefined
+          }
+          badgeColor="#ff3b3b"
         />
         <MetricCard
           value={summary ? gbp(summary.monthly_revenue_lost) : "—"}
-          label="Monthly lost"
+          label="Monthly revenue lost"
           sub="From churned customers"
           color="#ff9500"
           loading={!summary}
-          delay={0.1}
+          delay={0.12}
+          extra={
+            summary ? gbp((summary.annual_revenue_lost / 12) * 3) : undefined
+          }
+          extraLabel="Q1 at risk"
+          badge="Per month"
+          badgeColor="#ff9500"
         />
         <MetricCard
           value={summary ? gbp(summary.annual_revenue_lost) : "—"}
-          label="Annual lost"
-          sub="Projected from monthly"
+          label="Annual revenue at risk"
+          sub="Projected from churn rate"
           color="#ff3b3b"
           loading={!summary}
-          delay={0.15}
+          delay={0.18}
+          extra={highCount > 0 ? `${highCount} high-risk` : undefined}
+          extraLabel="Stream"
+          badge={avgRisk !== null ? `Avg risk ${avgRisk}%` : undefined}
+          badgeColor="#ff9500"
         />
         <MetricCard
           value={summary ? `£${summary.avg_monthly_charges}` : "—"}
-          label="Avg charge"
-          sub="Per customer/month"
+          label="Avg monthly charge"
+          sub="Across all customers"
           color="#30d158"
           loading={!summary}
-          delay={0.2}
+          delay={0.24}
+          extra={summary ? gbp(summary.avg_monthly_charges * 12) : undefined}
+          extraLabel="Annual ARPU"
+          badge="Per customer"
+          badgeColor="#30d158"
         />
       </div>
 
       {/* Charts */}
       <div className="db-2col">
+        {/* Trend line */}
         <div className="db-panel">
           <div className="db-ph">
             <span className="db-pt">Churn rate by tenure cohort</span>
             <span className="db-ps">% churned · /trend</span>
           </div>
+          {trendInsight && (
+            <div className="db-chart-insight">{trendInsight}</div>
+          )}
           <div style={{ padding: "0.75rem 0.25rem 0.5rem", height: 200 }}>
             {trend.length === 0 ? (
               <div className="db-empty">Loading…</div>
@@ -646,16 +754,16 @@ function OverviewTab({
                     tickFormatter={(v) => `${v}%`}
                   />
                   <Tooltip
-                    {...TT_STYLE}
+                    {...TT}
                     formatter={(v: number) => [`${v}%`, "Churn rate"]}
                   />
                   <Line
                     type="monotone"
                     dataKey="churn_rate"
                     stroke="#ff3b3b"
-                    strokeWidth={2}
+                    strokeWidth={2.5}
                     dot={{ fill: "#ff3b3b", r: 3, strokeWidth: 0 }}
-                    activeDot={{ r: 5 }}
+                    activeDot={{ r: 5, fill: "#ff3b3b" }}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -663,54 +771,97 @@ function OverviewTab({
           </div>
         </div>
 
+        {/* SHAP horizontal bar chart */}
         <div className="db-panel">
           <div className="db-ph">
-            <span className="db-pt">SHAP feature importance</span>
+            <span className="db-pt">Top churn drivers — SHAP importance</span>
             <span className="db-ps">Mean |SHAP| · /features</span>
           </div>
-          <div style={{ padding: "0.5rem 0" }}>
+          {shapInsight && <div className="db-chart-insight">{shapInsight}</div>}
+          <div style={{ padding: "0.5rem 0.5rem 0.5rem 0", height: 210 }}>
             {features.length === 0 ? (
               <div className="db-empty">Computing SHAP values…</div>
             ) : (
-              features.slice(0, 7).map((f) => (
-                <div className="db-shap-row" key={f.feature}>
-                  <span className="db-shap-lbl">{f.feature}</span>
-                  <div className="db-shap-bg">
-                    <div
-                      style={{
-                        height: 5,
-                        borderRadius: 4,
-                        width: `${(f.importance / maxImp) * 100}%`,
-                        background: shapColor(f.importance),
-                        transition: "width .8s cubic-bezier(.22,1,.36,1)",
-                      }}
-                    />
-                  </div>
-                  <span className="db-shap-val">{f.importance.toFixed(3)}</span>
-                </div>
-              ))
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={shapData}
+                  layout="vertical"
+                  margin={{ top: 4, right: 48, bottom: 4, left: 8 }}
+                >
+                  <CartesianGrid
+                    stroke="#1a1a2e"
+                    strokeDasharray="3 3"
+                    horizontal={false}
+                  />
+                  <XAxis
+                    type="number"
+                    tick={{
+                      fontFamily: "monospace",
+                      fontSize: 9,
+                      fill: "#555",
+                    }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v) => v.toFixed(2)}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="feature"
+                    width={110}
+                    tick={{
+                      fontFamily: "monospace",
+                      fontSize: 9,
+                      fill: "#888",
+                    }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip content={<ShapTooltip />} />
+                  <Bar dataKey="importance" radius={[0, 4, 4, 0]}>
+                    {shapData.map((d, i) => {
+                      const max =
+                        shapData[shapData.length - 1]?.importance ?? 1;
+                      const ratio = d.importance / max;
+                      const color =
+                        ratio > 0.7
+                          ? "#ff3b3b"
+                          : ratio > 0.4
+                            ? "#ff9500"
+                            : "#0af";
+                      return <Cell key={i} fill={color} fillOpacity={0.85} />;
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             )}
           </div>
         </div>
       </div>
 
-      {/* ── Live feed (35%) + Priority queue (65%) ── */}
-      <div className="db-feed-pq-grid">
-        {/* Live stream — narrower */}
+      {/* Feed + Priority */}
+      <div className="db-feed-pq">
+        {/* Live stream */}
         <div
           className="db-panel"
           style={{
             display: "flex",
             flexDirection: "column",
-            height: PANEL_HEIGHT,
-            minHeight: 300,
+            height: H,
+            minHeight: 280,
           }}
         >
           <div className="db-ph" style={{ flexShrink: 0 }}>
             <span className="db-pt">Live stream</span>
             <span
               className="db-ps"
-              style={{ color: streamStatus === "live" ? "#30d158" : "#555" }}
+              style={{
+                color:
+                  streamStatus === "live"
+                    ? "#30d158"
+                    : streamStatus === "error"
+                      ? "#ff3b3b"
+                      : "#ff9500",
+              }}
             >
               {streamStatus === "live"
                 ? "● /stream"
@@ -747,49 +898,40 @@ function OverviewTab({
               ))
             )}
           </div>
-          <div className="db-ftr" style={{ flexShrink: 0 }}>
+          <div className="db-ftr">
             <div className="db-dot-r" />
             <span>~2s per prediction</span>
           </div>
         </div>
 
-        {/* Priority queue — wider, with search */}
+        {/* Priority queue */}
         <div
           className="db-panel"
           style={{
             display: "flex",
             flexDirection: "column",
-            height: PANEL_HEIGHT,
-            minHeight: 300,
+            height: H,
+            minHeight: 280,
           }}
         >
-          {/* Header */}
           <div className="db-ph" style={{ flexShrink: 0 }}>
             <span className="db-pt">Priority action queue</span>
             <span className="db-ps">
-              critical · high · medium · click row for details
+              critical · high · medium · click for details
             </span>
           </div>
-
-          {/* Search bar — fixed below header */}
-          <div className="pq-search-wrap" style={{ flexShrink: 0 }}>
+          <div className="pq-bar">
             <input
               className="pq-search"
-              placeholder="Search by customer ID…"
+              placeholder="Search customer ID…"
               value={pqSearch}
               onChange={(e) => setPqSearch(e.target.value)}
+              spellCheck={false}
             />
             <span className="pq-count">
-              {priorityRows.length} /{" "}
-              {
-                priority.filter((c) =>
-                  ["critical", "high", "medium"].includes(c.risk_level),
-                ).length
-              }
+              {pqRows.length} / {allPQ.length}
             </span>
           </div>
-
-          {/* Scrollable table */}
           <div
             style={{
               flex: 1,
@@ -798,27 +940,25 @@ function OverviewTab({
               minHeight: 0,
             }}
           >
-            {priority.filter((c) =>
-              ["critical", "high", "medium"].includes(c.risk_level),
-            ).length === 0 ? (
+            {allPQ.length === 0 ? (
               <div className="db-empty">
-                Building from stream…
+                Building…
                 <br />
                 <span
                   style={{
                     fontSize: 10,
-                    color: "#444",
-                    marginTop: 4,
+                    color: "#333",
                     display: "block",
+                    marginTop: 4,
                   }}
                 >
-                  Medium / high / critical customers appear here
+                  Appears as stream scores customers
                 </span>
               </div>
-            ) : priorityRows.length === 0 ? (
-              <div className="db-empty">No results for "{pqSearch}"</div>
+            ) : pqRows.length === 0 ? (
+              <div className="db-empty">No match for "{pqSearch}"</div>
             ) : (
-              <table className="pq-table">
+              <table className="pq-tbl">
                 <thead>
                   <tr>
                     {[
@@ -835,116 +975,95 @@ function OverviewTab({
                   </tr>
                 </thead>
                 <tbody>
-                  {priorityRows.map((c, i) => {
+                  {pqRows.map((c, i) => {
                     const top =
                       c.shap_reasons?.find(
                         (r) => r.direction === "increases risk",
                       ) ?? c.shap_reasons?.[0];
+                    const q = pqSearch.trim().toLowerCase();
+                    const id = c.customer_id;
+                    const idx = q ? id.toLowerCase().indexOf(q) : -1;
                     return (
                       <tr
                         key={c.customer_id}
-                        onClick={() => setSelectedCustomer(c)}
+                        onClick={() => setSelected(c)}
                         style={{
                           background:
                             c.risk_level === "critical"
-                              ? "rgba(255,59,59,0.02)"
+                              ? "rgba(255,59,59,0.025)"
                               : "transparent",
                         }}
                       >
-                        {/* Rank */}
                         <td
                           style={{
                             fontFamily: "monospace",
                             fontSize: 10,
-                            color: "#555",
+                            color: "#444",
+                            width: 24,
                           }}
                         >
                           {i + 1}
                         </td>
-
-                        {/* Customer ID */}
                         <td
                           style={{
                             fontFamily: "monospace",
-                            fontSize: "clamp(11px,1vw,12px)",
+                            fontSize: "clamp(11px,.95vw,12px)",
                             fontWeight: 600,
-                            color: "#f0f0f0",
+                            color: "#e0e0e0",
                           }}
                         >
-                          {/* Highlight matching search text */}
-                          {pqSearch &&
-                          c.customer_id
-                            .toLowerCase()
-                            .includes(pqSearch.toLowerCase())
-                            ? (() => {
-                                const idx = c.customer_id
-                                  .toLowerCase()
-                                  .indexOf(pqSearch.toLowerCase());
-                                return (
-                                  <>
-                                    {c.customer_id.slice(0, idx)}
-                                    <span
-                                      style={{
-                                        background: "#ff950033",
-                                        color: "#ff9500",
-                                        borderRadius: 2,
-                                        padding: "0 1px",
-                                      }}
-                                    >
-                                      {c.customer_id.slice(
-                                        idx,
-                                        idx + pqSearch.length,
-                                      )}
-                                    </span>
-                                    {c.customer_id.slice(idx + pqSearch.length)}
-                                  </>
-                                );
-                              })()
-                            : c.customer_id}
+                          {idx >= 0 ? (
+                            <>
+                              {id.slice(0, idx)}
+                              <span
+                                style={{
+                                  background: "#ff950025",
+                                  color: "#ffb040",
+                                  borderRadius: 2,
+                                  padding: "0 1px",
+                                }}
+                              >
+                                {id.slice(idx, idx + q.length)}
+                              </span>
+                              {id.slice(idx + q.length)}
+                            </>
+                          ) : (
+                            id
+                          )}
                         </td>
-
-                        {/* Risk */}
                         <td>
                           <RiskBadge
                             level={c.risk_level}
                             prob={c.churn_probability}
                           />
                         </td>
-
-                        {/* Contract */}
                         <td
                           style={{
                             fontFamily: "monospace",
-                            fontSize: "clamp(10px,.85vw,11px)",
-                            color: "#888",
+                            fontSize: "clamp(9px,.8vw,10px)",
+                            color: "#666",
                           }}
                         >
                           {c.contract}
                         </td>
-
-                        {/* Tenure */}
                         <td
                           style={{
                             fontFamily: "monospace",
-                            fontSize: "clamp(10px,.85vw,11px)",
-                            color: "#888",
+                            fontSize: "clamp(9px,.8vw,10px)",
+                            color: "#666",
                           }}
                         >
                           {Math.round(c.tenure)}mo
                         </td>
-
-                        {/* Charges */}
                         <td
                           style={{
                             fontFamily: "monospace",
-                            fontSize: "clamp(10px,.85vw,11px)",
-                            color: "#888",
+                            fontSize: "clamp(9px,.8vw,10px)",
+                            color: "#666",
                           }}
                         >
                           £{c.monthly_charges?.toFixed(2)}
                         </td>
-
-                        {/* Top SHAP driver + mini bar */}
                         <td>
                           {top ? (
                             <div
@@ -958,7 +1077,7 @@ function OverviewTab({
                                 style={{
                                   fontFamily: "monospace",
                                   fontSize: 10,
-                                  color: "#888",
+                                  color: "#666",
                                   minWidth: 80,
                                 }}
                               >
@@ -966,17 +1085,17 @@ function OverviewTab({
                               </span>
                               <div
                                 style={{
-                                  width: 36,
-                                  height: 4,
+                                  width: 32,
+                                  height: 3,
                                   background: "#1e1e2e",
-                                  borderRadius: 4,
+                                  borderRadius: 3,
                                   flexShrink: 0,
                                 }}
                               >
                                 <div
                                   style={{
-                                    height: 4,
-                                    borderRadius: 4,
+                                    height: 3,
+                                    borderRadius: 3,
                                     width: `${Math.min(Math.abs(top.shap_impact) * 60, 100)}%`,
                                     background:
                                       top.direction === "increases risk"
@@ -989,7 +1108,7 @@ function OverviewTab({
                                 style={{
                                   fontFamily: "monospace",
                                   fontSize: 9,
-                                  color: "#555",
+                                  color: "#444",
                                 }}
                               >
                                 {top.shap_impact > 0 ? "+" : ""}
@@ -1014,27 +1133,35 @@ function OverviewTab({
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TAB 1: CUSTOMER SEARCH
+// TAB 1 — CUSTOMER SEARCH (powered by live stream data)
 // ════════════════════════════════════════════════════════════════════════════
-function SearchTab({ customers }: { customers: Customer[] }) {
+function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
   const [query, setQuery] = useState("");
-  const [riskFilter, setRiskFilter] = useState("");
-  const [contractFilter, setContract] = useState("");
+  const [riskF, setRiskF] = useState("");
+  const [contractF, setContractF] = useState("");
   const [sortKey, setSortKey] = useState<"risk" | "charges" | "tenure">("risk");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [page, setPage] = useState(0);
-  const PAGE_SIZE = 10;
+  const PAGE = 15;
 
-  const filtered = customers
+  const contractClass = (c: string) =>
+    c === "Month-to-month"
+      ? "cs-contract cs-m2m"
+      : c === "One year"
+        ? "cs-contract cs-one"
+        : "cs-contract cs-two";
+
+  const filtered = streamCustomers
     .filter((c) => {
-      const q = query.toLowerCase();
+      // trim + lowercase for robust search
+      const q = query.trim().toLowerCase();
       return (
         (!q ||
           c.customer_id.toLowerCase().includes(q) ||
           c.contract.toLowerCase().includes(q) ||
           c.risk_level.toLowerCase().includes(q)) &&
-        (!riskFilter || c.risk_level === riskFilter) &&
-        (!contractFilter || c.contract === contractFilter)
+        (!riskF || c.risk_level === riskF) &&
+        (!contractF || c.contract === contractF)
       );
     })
     .sort((a, b) => {
@@ -1047,10 +1174,9 @@ function SearchTab({ customers }: { customers: Customer[] }) {
       return sortDir === "desc" ? g(b) - g(a) : g(a) - g(b);
     });
 
-  const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-
-  const toggleSort = (k: typeof sortKey) => {
+  const paged = filtered.slice(page * PAGE, (page + 1) * PAGE);
+  const pages = Math.ceil(filtered.length / PAGE);
+  const tog = (k: typeof sortKey) => {
     if (sortKey === k) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
     else {
       setSortKey(k);
@@ -1058,27 +1184,28 @@ function SearchTab({ customers }: { customers: Customer[] }) {
     }
     setPage(0);
   };
-  const si = (k: typeof sortKey) =>
-    sortKey === k ? (sortDir === "desc" ? " ↓" : " ↑") : " ↕";
+  const arr = (k: typeof sortKey) =>
+    sortKey === k ? (sortDir === "desc" ? " ↓" : " ↑") : "";
 
   return (
-    <div className="db-panel">
-      <div className="db-search-bar">
+    <div className="db-panel cs-root">
+      {/* Toolbar */}
+      <div className="cs-header">
         <input
-          className="db-input"
-          style={{ flex: 1, minWidth: 180 }}
-          placeholder="Search by ID, contract, risk level…"
+          className="cs-search"
+          placeholder="Search by customer ID, contract, risk…"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
             setPage(0);
           }}
+          spellCheck={false}
         />
         <select
-          className="db-select"
-          value={riskFilter}
+          className="cs-filter"
+          value={riskF}
           onChange={(e) => {
-            setRiskFilter(e.target.value);
+            setRiskF(e.target.value);
             setPage(0);
           }}
         >
@@ -1089,10 +1216,10 @@ function SearchTab({ customers }: { customers: Customer[] }) {
           <option value="low">Low</option>
         </select>
         <select
-          className="db-select"
-          value={contractFilter}
+          className="cs-filter"
+          value={contractF}
           onChange={(e) => {
-            setContract(e.target.value);
+            setContractF(e.target.value);
             setPage(0);
           }}
         >
@@ -1101,127 +1228,185 @@ function SearchTab({ customers }: { customers: Customer[] }) {
           <option value="One year">One year</option>
           <option value="Two year">Two year</option>
         </select>
+        {/* Live indicator */}
+        <div className="cs-live-pill">
+          <div
+            style={{
+              width: 5,
+              height: 5,
+              borderRadius: "50%",
+              background: "#30d158",
+              animation: "pulse 2s infinite",
+            }}
+          />
+          live stream
+        </div>
+        <span className="cs-count">
+          {filtered.length} of {streamCustomers.length} customers
+        </span>
       </div>
 
-      {customers.length === 0 ? (
-        <div className="db-empty">Loading customers from /customers…</div>
-      ) : (
-        <div className="db-tbl-wrap">
-          <table className="db-tbl">
+      {/* Table */}
+      <div className="cs-tbl-wrap">
+        {streamCustomers.length === 0 ? (
+          <div className="db-empty" style={{ paddingTop: "3rem" }}>
+            <div style={{ fontSize: 24, opacity: 0.15, marginBottom: 12 }}>
+              ⚡
+            </div>
+            Waiting for stream data…
+            <br />
+            <span
+              style={{
+                fontSize: 10,
+                color: "#333",
+                display: "block",
+                marginTop: 6,
+              }}
+            >
+              Customers appear here as /stream scores them in real time
+            </span>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="db-empty">No customers match your filters.</div>
+        ) : (
+          <table className="cs-tbl">
             <thead>
               <tr>
                 <th>Customer ID</th>
-                <th onClick={() => toggleSort("risk")}>
-                  Risk score{si("risk")}
+                <th
+                  className={`s${sortKey === "risk" ? " active" : ""}`}
+                  onClick={() => tog("risk")}
+                >
+                  Risk{arr("risk")}
                 </th>
                 <th>Contract</th>
-                <th onClick={() => toggleSort("tenure")}>
-                  Tenure{si("tenure")}
+                <th
+                  className={`s${sortKey === "tenure" ? " active" : ""}`}
+                  onClick={() => tog("tenure")}
+                >
+                  Tenure{arr("tenure")}
                 </th>
-                <th onClick={() => toggleSort("charges")}>
-                  Monthly £{si("charges")}
+                <th
+                  className={`s${sortKey === "charges" ? " active" : ""}`}
+                  onClick={() => tog("charges")}
+                >
+                  Monthly £{arr("charges")}
                 </th>
                 <th>Top SHAP driver</th>
                 <th>Recommendation</th>
               </tr>
             </thead>
             <tbody>
-              {paged.map((c) => {
-                const topShap = c.shap_reasons?.[0];
+              {paged.map((c, i) => {
+                const top = c.shap_reasons?.[0];
+                // Highlight search match in customer ID
+                const q = query.trim().toLowerCase();
+                const id = c.customer_id;
+                const idx = q ? id.toLowerCase().indexOf(q) : -1;
                 return (
                   <tr key={c.customer_id}>
-                    <td className="db-tbl-id">{c.customer_id}</td>
+                    <td>
+                      <span className="cs-id">
+                        {idx >= 0 ? (
+                          <>
+                            {id.slice(0, idx)}
+                            <span
+                              style={{
+                                background: "#ff950025",
+                                color: "#ffb040",
+                                borderRadius: 2,
+                                padding: "0 1px",
+                              }}
+                            >
+                              {id.slice(idx, idx + q.length)}
+                            </span>
+                            {id.slice(idx + q.length)}
+                          </>
+                        ) : (
+                          id
+                        )}
+                      </span>
+                    </td>
                     <td>
                       <RiskBadge
                         level={c.risk_level}
                         prob={c.churn_probability}
                       />
                     </td>
-                    <td className="db-tbl-mono">{c.contract}</td>
-                    <td className="db-tbl-mono">{Math.round(c.tenure)}mo</td>
-                    <td className="db-tbl-mono">
-                      £{c.monthly_charges?.toFixed(2)}
+                    <td>
+                      <span className={contractClass(c.contract)}>
+                        {c.contract}
+                      </span>
                     </td>
                     <td>
-                      {topShap ? (
-                        <div className="db-bar-wrap">
-                          <span
-                            style={{
-                              fontSize: 10,
-                              color: "#888",
-                              minWidth: 110,
-                              fontFamily: "monospace",
-                            }}
-                          >
-                            {topShap.feature}
-                          </span>
-                          <div className="db-bar-bg">
+                      <span className="cs-mono">{Math.round(c.tenure)}mo</span>
+                    </td>
+                    <td>
+                      <span className="cs-mono">
+                        £{c.monthly_charges?.toFixed(2)}
+                      </span>
+                    </td>
+                    <td>
+                      {top ? (
+                        <div className="cs-shap">
+                          <span className="cs-shap-feat">{top.feature}</span>
+                          <div className="cs-shap-track">
                             <div
                               style={{
-                                height: 4,
-                                borderRadius: 4,
-                                width: `${Math.min(Math.abs(topShap.shap_impact) * 60, 100)}%`,
+                                height: 3,
+                                borderRadius: 3,
+                                width: `${Math.min(Math.abs(top.shap_impact) * 60, 100)}%`,
                                 background:
-                                  topShap.direction === "increases risk"
+                                  top.direction === "increases risk"
                                     ? "#ff3b3b"
                                     : "#30d158",
                               }}
                             />
                           </div>
-                          <span
-                            style={{
-                              fontFamily: "monospace",
-                              fontSize: 10,
-                              color: "#555",
-                            }}
-                          >
-                            {topShap.shap_impact > 0 ? "+" : ""}
-                            {topShap.shap_impact.toFixed(2)}
+                          <span className="cs-shap-num">
+                            {top.shap_impact > 0 ? "+" : ""}
+                            {top.shap_impact.toFixed(2)}
                           </span>
                         </div>
                       ) : (
                         "—"
                       )}
                     </td>
-                    <td
-                      style={{
-                        fontFamily: "monospace",
-                        fontSize: 10,
-                        color: "#0af",
-                        maxWidth: 180,
-                      }}
-                    >
-                      {c.recommendation ? `→ ${c.recommendation}` : "—"}
+                    <td>
+                      <span className="cs-rec">
+                        {c.recommendation ? `→ ${c.recommendation}` : "—"}
+                      </span>
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-        </div>
-      )}
+        )}
+      </div>
 
-      <div className="db-tbl-ftr">
+      {/* Footer */}
+      <div className="cs-footer">
         <span>
-          Showing {paged.length} of {filtered.length} customers
+          {streamCustomers.length === 0
+            ? "Waiting for stream…"
+            : `Showing ${paged.length} of ${filtered.length} · ${streamCustomers.length} total scored`}
         </span>
-        {totalPages > 1 && (
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        {pages > 1 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <button
-              className="db-pg-btn"
+              className="cs-pg"
               disabled={page === 0}
               onClick={() => setPage((p) => p - 1)}
             >
               ← Prev
             </button>
-            <span
-              style={{ fontFamily: "monospace", fontSize: 10, color: "#555" }}
-            >
-              {page + 1}/{totalPages}
+            <span className="cs-pg-n">
+              {page + 1} / {pages}
             </span>
             <button
-              className="db-pg-btn"
-              disabled={page === totalPages - 1}
+              className="cs-pg"
+              disabled={page === pages - 1}
               onClick={() => setPage((p) => p + 1)}
             >
               Next →
@@ -1234,7 +1419,7 @@ function SearchTab({ customers }: { customers: Customer[] }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TAB 2: PREDICT
+// TAB 2 — PREDICT
 // ════════════════════════════════════════════════════════════════════════════
 function PredictTab() {
   const [form, setForm] = useState({
@@ -1261,8 +1446,7 @@ function PredictTab() {
   const [result, setResult] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  const setField = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const setF = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const FIELDS: Array<{
     key: string;
@@ -1340,7 +1524,7 @@ function PredictTab() {
     },
   ];
 
-  const runPredict = async () => {
+  const run = async () => {
     setLoading(true);
     setError("");
     setResult(null);
@@ -1382,9 +1566,9 @@ function PredictTab() {
               <span className="db-field-lbl">{f.label}</span>
               {f.options ? (
                 <select
-                  className="db-field-input"
+                  className="db-field-inp"
                   value={form[f.key as keyof typeof form]}
-                  onChange={(e) => setField(f.key, e.target.value)}
+                  onChange={(e) => setF(f.key, e.target.value)}
                 >
                   {f.options.map((o) => (
                     <option key={o}>{o}</option>
@@ -1392,20 +1576,19 @@ function PredictTab() {
                 </select>
               ) : (
                 <input
-                  className="db-field-input"
+                  className="db-field-inp"
                   type={f.type ?? "text"}
                   value={form[f.key as keyof typeof form]}
-                  onChange={(e) => setField(f.key, e.target.value)}
+                  onChange={(e) => setF(f.key, e.target.value)}
                 />
               )}
             </div>
           ))}
         </div>
-        <button className="db-pred-btn" onClick={runPredict} disabled={loading}>
+        <button className="db-pred-btn" onClick={run} disabled={loading}>
           {loading ? "Scoring…" : "Run prediction →"}
         </button>
       </div>
-
       <div className="db-panel">
         <div className="db-ph">
           <span className="db-pt">Prediction result</span>
@@ -1448,7 +1631,7 @@ function PredictTab() {
             <div className="db-result-top">
               <div
                 className="db-result-prob"
-                style={{ color: riskColor(result.risk_level) }}
+                style={{ color: rc(result.risk_level) }}
               >
                 {Math.round(result.churn_probability * 100)}%
               </div>
@@ -1457,10 +1640,7 @@ function PredictTab() {
                 <div className="db-result-sub">
                   Risk:{" "}
                   <span
-                    style={{
-                      color: riskColor(result.risk_level),
-                      fontWeight: 700,
-                    }}
+                    style={{ color: rc(result.risk_level), fontWeight: 700 }}
                   >
                     {result.risk_level.toUpperCase()}
                   </span>
@@ -1471,7 +1651,7 @@ function PredictTab() {
                 />
               </div>
             </div>
-            <div className="db-shap-title">SHAP breakdown — why this score</div>
+            <div className="db-shap-title">SHAP breakdown</div>
             {result.shap_reasons.map((r) => (
               <div className="db-result-shap-row" key={r.feature}>
                 <span className="db-result-shap-lbl">{r.feature}</span>
@@ -1520,7 +1700,6 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
   const [features, setFeatures] = useState<Feature[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [feed, setFeed] = useState<Customer[]>([]);
   const [priority, setPriority] = useState<Customer[]>([]);
   const [newestId, setNewestId] = useState("");
@@ -1528,7 +1707,11 @@ export default function Dashboard() {
   const [streamStatus, setStreamStatus] = useState<
     "connecting" | "live" | "error"
   >("connecting");
-  const seenPriority = useRef<Map<string, Customer>>(new Map());
+
+  // ALL customers ever scored by stream — feeds BOTH priority queue AND Tab 1 search
+  const seen = useRef<Map<string, Customer>>(new Map());
+  // Separate sorted list for Tab 1 (all customers, not filtered)
+  const [allStreamCustomers, setAllStreamCustomers] = useState<Customer[]>([]);
 
   useEffect(() => {
     const stamp = () => setLastUpdated(new Date().toLocaleTimeString());
@@ -1547,9 +1730,21 @@ export default function Dashboard() {
       .then((r) => r.json())
       .then((d) => setFeatures(d.features ?? []))
       .catch(console.error);
-    fetch(`${API}/customers?limit=50`)
+    // Also seed Tab 1 with /customers so it's not empty before stream fills
+    fetch(`${API}/customers?limit=100`)
       .then((r) => r.json())
-      .then((d) => setCustomers(d.customers ?? []))
+      .then((d) => {
+        const cs: Customer[] = d.customers ?? [];
+        cs.forEach((c) => {
+          if (!seen.current.has(c.customer_id))
+            seen.current.set(c.customer_id, c);
+        });
+        setAllStreamCustomers(
+          [...seen.current.values()].sort(
+            (a, b) => b.churn_probability - a.churn_probability,
+          ),
+        );
+      })
       .catch(console.error);
   }, []);
 
@@ -1563,14 +1758,21 @@ export default function Dashboard() {
         if (!c || (c as any).error) return;
         setNewestId(c.customer_id);
         setLastUpdated(new Date().toLocaleTimeString());
+
+        // Update live feed (last 8)
         setFeed((prev) => [c, ...prev].slice(0, 8));
-        seenPriority.current.set(c.customer_id, c);
-        // No .slice — pass ALL customers, OverviewTab filters med/high/critical
-        setPriority(
-          [...seenPriority.current.values()].sort(
-            (a, b) => b.churn_probability - a.churn_probability,
-          ),
+
+        // Update the seen map — used by BOTH priority queue and Tab 1
+        seen.current.set(c.customer_id, c);
+        const sorted = [...seen.current.values()].sort(
+          (a, b) => b.churn_probability - a.churn_probability,
         );
+
+        // Priority queue (all risk levels in state, OverviewTab filters)
+        setPriority(sorted);
+
+        // Tab 1 customer table (all scored customers)
+        setAllStreamCustomers(sorted);
       } catch {
         /* ignore */
       }
@@ -1578,7 +1780,7 @@ export default function Dashboard() {
     return () => es.close();
   }, []);
 
-  const streamBadgeStyle = {
+  const sbStyle = {
     background:
       streamStatus === "live"
         ? "#30d15818"
@@ -1605,7 +1807,7 @@ export default function Dashboard() {
             <span className="db-badge">Dashboard</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="db-sbadge" style={streamBadgeStyle}>
+            <span className="db-sbadge" style={sbStyle}>
               {streamStatus === "live"
                 ? "● stream live"
                 : streamStatus === "connecting"
@@ -1627,6 +1829,23 @@ export default function Dashboard() {
                 onClick={() => setTab(i as Tab)}
               >
                 {label}
+                {/* Show live count badge on tab 1 */}
+                {i === 1 && allStreamCustomers.length > 0 && (
+                  <span
+                    style={{
+                      marginLeft: 6,
+                      fontFamily: "monospace",
+                      fontSize: 9,
+                      background: "#30d15820",
+                      color: "#30d158",
+                      border: "1px solid #30d15830",
+                      borderRadius: 999,
+                      padding: "0 5px",
+                    }}
+                  >
+                    {allStreamCustomers.length}
+                  </span>
+                )}
               </button>
             ),
           )}
@@ -1643,7 +1862,7 @@ export default function Dashboard() {
             streamStatus={streamStatus}
           />
         )}
-        {tab === 1 && <SearchTab customers={customers} />}
+        {tab === 1 && <SearchTab streamCustomers={allStreamCustomers} />}
         {tab === 2 && <PredictTab />}
       </div>
     </>
