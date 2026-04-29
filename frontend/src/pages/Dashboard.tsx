@@ -1,16 +1,15 @@
 /**
  * Dashboard.tsx — ChurnRadar
- *
- * KEY CHANGES:
- * - Tab 1 "Customer search" is now fed LIVE from the stream (same data as feed)
- *   Every customer scored by /stream appears instantly in the search table.
- *   Search by ID works because we own the data directly in state.
- * - Metric cards are more interactive — show secondary stats + risk indicators
- * - SHAP importance replaced with a proper horizontal BarChart (Recharts)
- * - Priority queue search is fully fixed (trims, lowercases, exact substring)
+ * Changes:
+ *  - Back button in nav → navigates to "/"
+ *  - Priority queue "Action" col shows smart action derived from recommendation/risk
+ *  - Modal prominently shows recommendation
+ *  - Tab 2 (Customer search) mobile responsive
+ *  - Tab 3 (Predict) completely redesigned — grouped sections, clean result panel
  */
 
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   LineChart,
   Line,
@@ -26,7 +25,6 @@ import {
 
 const API = "http://localhost:8000";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
 type Tab = 0 | 1 | 2;
 type SortDir = "asc" | "desc";
 
@@ -64,21 +62,19 @@ interface Feature {
   importance: number;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-const RISK_COLOR: Record<string, string> = {
+const RC: Record<string, string> = {
   critical: "#ff3b3b",
   high: "#ff6b35",
   medium: "#ff9500",
   low: "#30d158",
 };
-const rc = (l: string) => RISK_COLOR[l] ?? "#888";
+const rc = (l: string) => RC[l] ?? "#888";
 const gbp = (n: number) =>
   new Intl.NumberFormat("en-GB", {
     style: "currency",
     currency: "GBP",
     maximumFractionDigits: 0,
   }).format(n);
-
 const TT = {
   contentStyle: {
     background: "#111",
@@ -92,6 +88,23 @@ const TT = {
   labelStyle: { color: "#888", marginBottom: 4 },
 };
 
+// Derive a short action label from recommendation text or risk level
+function deriveAction(customer: Customer): string {
+  const rec = customer.recommendation?.toLowerCase() ?? "";
+  if (rec.includes("call")) return "📞 Call today";
+  if (rec.includes("email") || rec.includes("send")) return "✉ Send email";
+  if (rec.includes("onboard")) return "🎯 Onboard check";
+  if (rec.includes("discount") || rec.includes("offer"))
+    return "💰 Offer discount";
+  if (rec.includes("bundle") || rec.includes("upsell"))
+    return "📦 Upsell bundle";
+  if (rec.includes("monitor")) return "👀 Monitor";
+  // fallback by risk
+  if (customer.risk_level === "critical") return "📞 Call today";
+  if (customer.risk_level === "high") return "✉ Reach out";
+  return "👀 Monitor";
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // STYLES
 // ════════════════════════════════════════════════════════════════════════════
@@ -101,166 +114,254 @@ const STYLES = `
   @keyframes fadeUp  { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
   @keyframes shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
   @keyframes modalIn { from{opacity:0;transform:scale(.97) translateY(6px)} to{opacity:1;transform:scale(1) translateY(0)} }
-  @keyframes rowSlide{ from{opacity:0;transform:translateX(-6px)} to{opacity:1;transform:translateX(0)} }
+  @keyframes rowSlide{ from{opacity:0;transform:translateX(-5px)} to{opacity:1;transform:translateX(0)} }
+  @keyframes slideUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
 
-  *{ box-sizing:border-box }
+  *, *::before, *::after { box-sizing:border-box }
+  html,body{ margin:0;padding:0 }
 
-  .db{ padding:clamp(1rem,2vw,1.5rem) clamp(1rem,3vw,2rem); min-height:100vh; background:var(--bg,#0a0a0f); color:#f0f0f0; font-family:var(--font-display,system-ui,sans-serif) }
+  .db {
+    padding: clamp(.6rem,1.2vw,1rem) clamp(.6rem,1.5vw,1.5rem);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg,#0a0a0f);
+    color: #f0f0f0;
+    font-family: var(--font-display,system-ui,sans-serif);
+  }
 
-  /* ─ header */
-  .db-hdr  { display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:8px }
-  .db-hdr-l{ display:flex;align-items:center;gap:10px }
-  .db-title{ font-size:clamp(13px,1.5vw,15px);font-weight:800;letter-spacing:-0.03em }
-  .db-dot  { width:9px;height:9px;border-radius:50%;background:#30d158;animation:pulse 2s infinite;flex-shrink:0 }
-  .db-dot-r{ width:6px;height:6px;border-radius:50%;background:#ff3b3b;animation:pulse 1.5s infinite;flex-shrink:0 }
-  .db-badge { font-family:monospace;font-size:10px;padding:2px 9px;border-radius:999px;background:#30d15818;border:1px solid #30d15833;color:#30d158 }
+  /* ─ Header */
+  .db-hdr   { display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;flex-wrap:wrap;gap:6px;flex-shrink:0 }
+  .db-hdr-l { display:flex;align-items:center;gap:8px }
+  .db-back  { display:flex;align-items:center;gap:5px;background:transparent;border:1px solid #1e1e2e;border-radius:7px;color:#666;cursor:pointer;padding:4px 10px;font-family:monospace;font-size:10px;transition:all .2s;text-decoration:none }
+  .db-back:hover{ border-color:#333;color:#aaa;background:#1a1a2e }
+  .db-title { font-size:clamp(12px,1.3vw,14px);font-weight:800;letter-spacing:-0.03em }
+  .db-dot   { width:7px;height:7px;border-radius:50%;background:#30d158;animation:pulse 2s infinite;flex-shrink:0 }
+  .db-dot-r { width:5px;height:5px;border-radius:50%;background:#ff3b3b;animation:pulse 1.5s infinite;flex-shrink:0 }
+  .db-badge { font-family:monospace;font-size:10px;padding:2px 7px;border-radius:999px;background:#30d15818;border:1px solid #30d15833;color:#30d158 }
   .db-time  { font-family:monospace;font-size:10px;color:#555 }
-  .db-sbadge{ font-family:monospace;font-size:10px;padding:2px 9px;border-radius:999px }
+  .db-sbadge{ font-family:monospace;font-size:10px;padding:2px 7px;border-radius:999px }
 
-  /* ─ tabs */
-  .db-tabs{ display:flex;gap:4px;margin-bottom:1rem;background:#111;border:1px solid #1e1e2e;border-radius:10px;padding:4px;width:fit-content }
-  .db-tab { padding:6px 18px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:transparent;color:#555;transition:all .2s;white-space:nowrap;font-family:inherit }
+  /* ─ Tabs */
+  .db-tabs{ display:flex;gap:3px;margin-bottom:.5rem;background:#111;border:1px solid #1e1e2e;border-radius:8px;padding:3px;width:fit-content;flex-shrink:0 }
+  .db-tab { padding:4px 13px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;border:none;background:transparent;color:#555;transition:all .2s;white-space:nowrap;font-family:inherit }
   .db-tab.on{ background:#1e1e2e;color:#f0f0f0 }
   .db-tab:hover:not(.on){ color:#aaa }
 
-  /* ─ metric cards — enhanced */
-  .db-metrics{ display:grid;grid-template-columns:repeat(auto-fit,minmax(clamp(160px,19vw,220px),1fr));gap:10px;margin-bottom:10px }
-  .db-mc{ background:#111;border:1px solid #1e1e2e;border-radius:14px;padding:clamp(.85rem,1.8vw,1.25rem) clamp(.85rem,1.8vw,1.35rem);position:relative;overflow:hidden;animation:fadeUp .5s ease both;cursor:default;transition:border-color .25s,box-shadow .25s }
-  .db-mc:hover{ border-color:#2a2a3a;box-shadow:0 0 24px rgba(0,0,0,.4) }
+  /* ─ Metric cards */
+  .db-metrics{ display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:.5rem;flex-shrink:0 }
+  .db-mc    { background:#111;border:1px solid #1e1e2e;border-radius:9px;padding:.55rem .75rem;position:relative;overflow:hidden;animation:fadeUp .45s ease both }
+  .db-mc:hover{ border-color:#2a2a3a }
   .db-mc-bar{ position:absolute;top:0;left:0;right:0;height:2px }
-  .db-mc-glow{ position:absolute;top:-20px;right:-20px;width:80px;height:80px;border-radius:50%;opacity:.06;filter:blur(20px) }
-  .db-mc-val{ font-family:monospace;font-size:clamp(1.2rem,2.8vw,2rem);font-weight:700;letter-spacing:-.02em;line-height:1;margin-bottom:4px }
-  .db-mc-lbl{ font-size:clamp(11px,1.1vw,13px);font-weight:600;margin-bottom:3px }
-  .db-mc-sub{ font-size:clamp(10px,.9vw,11px);color:#555;line-height:1.4;margin-bottom:8px }
-  .db-mc-extra{ display:flex;align-items:center;justify-content:space-between;padding-top:8px;border-top:1px solid #1a1a2e;margin-top:2px }
-  .db-mc-extra-val{ font-family:monospace;font-size:11px;color:#888 }
-  .db-mc-extra-badge{ font-family:monospace;font-size:10px;padding:1px 6px;border-radius:4px;font-weight:600 }
-  .db-skel{ height:2rem;width:90px;border-radius:6px;background:linear-gradient(90deg,#1e1e2e 25%,#2a2a3a 50%,#1e1e2e 75%);background-size:400px 100%;animation:shimmer 1.4s infinite;margin-bottom:5px }
+  .db-mc-val{ font-family:monospace;font-size:clamp(.95rem,1.8vw,1.35rem);font-weight:700;letter-spacing:-.02em;line-height:1;margin-bottom:2px }
+  .db-mc-lbl{ font-size:clamp(9px,.9vw,11px);font-weight:600;margin-bottom:1px }
+  .db-mc-sub{ font-size:clamp(8px,.75vw,9px);color:#555;line-height:1.3 }
+  .db-mc-foot{ display:flex;align-items:center;justify-content:space-between;margin-top:4px;padding-top:4px;border-top:1px solid #1a1a2e }
+  .db-mc-foot-lbl{ font-family:monospace;font-size:8px;color:#444 }
+  .db-mc-pill{ font-family:monospace;font-size:8px;padding:1px 5px;border-radius:3px;font-weight:600 }
+  .db-skel  { height:1.35rem;width:65px;border-radius:4px;background:linear-gradient(90deg,#1e1e2e 25%,#2a2a3a 50%,#1e1e2e 75%);background-size:400px 100%;animation:shimmer 1.4s infinite;margin-bottom:2px }
 
-  /* ─ panels */
-  .db-panel{ background:#111;border:1px solid #1e1e2e;border-radius:12px;overflow:hidden;margin-bottom:10px }
-  .db-ph   { padding:clamp(.55rem,.9vw,.8rem) clamp(.75rem,1.2vw,1.1rem);border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px }
-  .db-pt   { font-size:clamp(11px,1.1vw,13px);font-weight:700;letter-spacing:-.01em }
-  .db-ps   { font-family:monospace;font-size:clamp(9px,.9vw,11px);color:#555 }
-  .db-chart-insight{ padding:.45rem clamp(.75rem,1.2vw,1.1rem);font-size:clamp(10px,.9vw,11px);color:#4a4a6a;line-height:1.5;border-bottom:1px solid #0f0f1a;font-style:italic }
+  /* ─ Overview layout */
+  .ov-layout{ display:grid;grid-template-columns:1fr 1fr;gap:7px;flex:1;min-height:0;overflow:hidden }
+  .ov-left  { display:flex;flex-direction:column;gap:7px;min-height:0;overflow:hidden }
+  .ov-panel { background:#111;border:1px solid #1e1e2e;border-radius:9px;overflow:hidden;display:flex;flex-direction:column;flex:1;min-height:0 }
+  .ov-ph    { padding:.4rem .75rem;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:6px }
+  .ov-pt    { font-size:clamp(9px,.85vw,11px);font-weight:700;letter-spacing:-.01em }
+  .ov-ps    { font-family:monospace;font-size:clamp(8px,.7vw,9px);color:#555 }
+  .ov-insight{ padding:.25rem .75rem;font-size:clamp(8px,.7vw,9px);color:#3a3a5a;font-style:italic;line-height:1.4;border-bottom:1px solid #0f0f1a;flex-shrink:0 }
+  .ov-chart-wrap{ flex:1;min-height:0;padding:.2rem .1rem .2rem 0;overflow:hidden }
+  .ov-feed-scroll{ flex:1;overflow-y:auto;min-height:0 }
+  .ov-feed-row{ padding:.3rem .75rem;border-bottom:1px solid #0f0f1a;display:flex;align-items:center;justify-content:space-between;gap:6px;position:relative;animation:rowSlide .3s ease both }
+  .ov-feed-row:last-child{ border-bottom:none }
+  .ov-feed-id { font-family:monospace;font-size:clamp(9px,.8vw,10px);font-weight:600 }
+  .ov-feed-sub{ font-family:monospace;font-size:clamp(7px,.65vw,8px);color:#555;margin-top:1px }
+  .ov-ping    { position:absolute;top:50%;right:.75rem;transform:translateY(-50%);width:5px;height:5px;border-radius:50%;background:#30d158;animation:ping 1.1s ease-out }
+  .ov-ftr     { padding:.3rem .75rem;display:flex;align-items:center;gap:5px;border-top:1px solid #1e1e2e;flex-shrink:0 }
+  .ov-ftr span{ font-family:monospace;font-size:clamp(7px,.65vw,8px);color:#555 }
 
-  /* ─ layout grids */
-  .db-2col       { display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px }
-  .db-feed-pq    { display:grid;grid-template-columns:32fr 68fr;gap:10px;margin-bottom:10px;align-items:stretch }
-  @media(max-width:900px){ .db-2col,.db-feed-pq{ grid-template-columns:1fr } }
-
-  /* ─ SHAP chart custom tooltip */
-  .shap-tt{ background:#111;border:1px solid #1e1e2e;border-radius:8px;padding:7px 10px;font-family:monospace;font-size:11px;color:#f0f0f0 }
-
-  /* ─ live feed */
-  .db-feed-row{ padding:clamp(.4rem,.7vw,.6rem) clamp(.75rem,1.2vw,1.1rem);border-bottom:1px solid #0f0f1a;display:flex;align-items:center;justify-content:space-between;gap:8px;position:relative;animation:rowSlide .3s ease both }
-  .db-feed-row:last-child{ border-bottom:none }
-  .db-feed-id { font-family:monospace;font-size:clamp(10px,.9vw,11px);font-weight:600 }
-  .db-feed-sub{ font-family:monospace;font-size:clamp(8px,.75vw,9px);color:#555;margin-top:2px }
-  .db-ping    { position:absolute;top:50%;right:clamp(.75rem,1.2vw,1.1rem);transform:translateY(-50%);width:6px;height:6px;border-radius:50%;background:#30d158;animation:ping 1.1s ease-out }
-  .db-ftr     { padding:clamp(.4rem,.7vw,.5rem) clamp(.75rem,1.2vw,1.1rem);display:flex;align-items:center;gap:8px;border-top:1px solid #1e1e2e;flex-shrink:0 }
-  .db-ftr span{ font-family:monospace;font-size:clamp(9px,.85vw,10px);color:#555 }
-
-  /* ─ risk badge */
-  .rb{ font-family:monospace;font-size:clamp(9px,.82vw,10px);font-weight:600;padding:2px 6px;border-radius:4px;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em }
-
-  /* ─ empty */
-  .db-empty{ padding:2rem;text-align:center;font-family:monospace;font-size:11px;color:#555 }
-
-  /* ── Priority queue ────────────────────────────────── */
-  .pq-bar{ padding:.5rem .85rem;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;gap:8px;flex-shrink:0;background:#0d0d15 }
-  .pq-search{ background:#111;border:1px solid #252535;border-radius:7px;padding:5px 10px;color:#f0f0f0;font-family:monospace;font-size:11px;outline:none;flex:1;transition:border-color .2s }
-  .pq-search:focus{ border-color:#555 }
-  .pq-search::placeholder{ color:#333 }
-  .pq-count{ font-family:monospace;font-size:10px;color:#444;flex-shrink:0 }
-  .pq-tbl{ width:100%;border-collapse:collapse }
-  .pq-tbl th{ position:sticky;top:0;z-index:2;background:#0a0a12;font-family:monospace;font-size:9px;color:#444;text-transform:uppercase;letter-spacing:.1em;font-weight:500;text-align:left;padding:.5rem .75rem;border-bottom:1px solid #1e1e2e;white-space:nowrap }
-  .pq-tbl td{ padding:.45rem .75rem;border-bottom:1px solid #0f0f1a;white-space:nowrap;vertical-align:middle;font-size:clamp(10px,.85vw,12px) }
+  /* ─ Priority queue */
+  .ov-right { display:flex;flex-direction:column;min-height:0;overflow:hidden;background:#111;border:1px solid #1e1e2e;border-radius:9px }
+  .pq-hdr   { padding:.4rem .75rem;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:6px }
+  .pq-pt    { font-size:clamp(9px,.85vw,11px);font-weight:700;letter-spacing:-.01em }
+  .pq-ps    { font-family:monospace;font-size:clamp(7px,.7vw,9px);color:#555 }
+  .pq-bar   { padding:.35rem .6rem;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;gap:6px;flex-shrink:0;background:#0d0d15 }
+  .pq-srch  { background:#111;border:1px solid #252535;border-radius:5px;padding:4px 8px;color:#f0f0f0;font-family:monospace;font-size:10px;outline:none;flex:1;transition:border-color .2s }
+  .pq-srch:focus{ border-color:#555 }
+  .pq-srch::placeholder{ color:#333 }
+  .pq-cnt   { font-family:monospace;font-size:9px;color:#444;white-space:nowrap }
+  .pq-scroll{ flex:1;overflow-y:auto;overflow-x:auto;min-height:0 }
+  .pq-tbl   { width:100%;border-collapse:collapse }
+  .pq-tbl th{ position:sticky;top:0;z-index:2;background:#0a0a12;font-family:monospace;font-size:8px;color:#444;text-transform:uppercase;letter-spacing:.1em;font-weight:500;text-align:left;padding:.38rem .6rem;border-bottom:1px solid #1e1e2e;white-space:nowrap }
+  .pq-tbl td{ padding:.35rem .6rem;border-bottom:1px solid #0a0a12;white-space:nowrap;vertical-align:middle;font-size:clamp(8px,.75vw,10px) }
   .pq-tbl tr:last-child td{ border-bottom:none }
   .pq-tbl tbody tr{ cursor:pointer;transition:background .1s }
   .pq-tbl tbody tr:hover td{ background:rgba(255,255,255,.035) }
+  /* Action badge in PQ */
+  .pq-action{ font-family:monospace;font-size:clamp(8px,.7vw,9px);white-space:nowrap;padding:2px 6px;border-radius:4px;background:#1a1a2e;color:#888;border:1px solid #252535 }
+  .pq-action.urgent{ background:#ff3b3b12;color:#ff6b6b;border-color:#ff3b3b22 }
+  .pq-action.reach { background:#ff95000d;color:#ffaa30;border-color:#ff95001a }
+  .pq-action.watch { background:#30d1580a;color:#30d158;border-color:#30d1581a }
 
-  /* ── Modal ─────────────────────────────────────────── */
+  /* ─ Risk badge */
+  .rb{ font-family:monospace;font-size:clamp(8px,.72vw,9px);font-weight:600;padding:2px 5px;border-radius:3px;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em }
+
+  /* ─ Modal */
   .modal-overlay{ position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:1rem }
-  .modal-box{ background:#0f0f1a;border:1px solid #2a2a3a;border-radius:16px;width:100%;max-width:500px;max-height:85vh;overflow-y:auto;box-shadow:0 32px 80px rgba(0,0,0,.8);animation:modalIn .18s ease both }
-  .modal-hdr{ padding:1rem 1.25rem;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#0f0f1a;z-index:1 }
-  .modal-close{ background:#1a1a2e;border:1px solid #2a2a3a;border-radius:6px;color:#666;cursor:pointer;padding:4px 10px;font-family:monospace;font-size:11px;transition:all .15s }
+  .modal-box{ background:#0f0f1a;border:1px solid #2a2a3a;border-radius:14px;width:100%;max-width:480px;max-height:88vh;overflow-y:auto;box-shadow:0 32px 80px rgba(0,0,0,.8);animation:modalIn .18s ease both }
+  .modal-hdr{ padding:.85rem 1.1rem;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#0f0f1a;z-index:1 }
+  .modal-close{ background:#1a1a2e;border:1px solid #2a2a3a;border-radius:5px;color:#666;cursor:pointer;padding:3px 9px;font-family:monospace;font-size:11px;transition:all .15s }
   .modal-close:hover{ color:#f0f0f0;border-color:#444 }
-  .modal-sec{ padding:1rem 1.25rem;border-bottom:1px solid #1a1a2e }
+  .modal-sec{ padding:.85rem 1.1rem;border-bottom:1px solid #1a1a2e }
   .modal-sec:last-child{ border-bottom:none }
-  .modal-sec-title{ font-family:monospace;font-size:9px;color:#444;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem }
-  .modal-grid{ display:grid;grid-template-columns:1fr 1fr;gap:8px }
-  .modal-stat{ background:#0a0a0f;border:1px solid #1a1a2e;border-radius:8px;padding:8px 12px }
-  .modal-stat-lbl{ font-family:monospace;font-size:9px;color:#444;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px }
-  .modal-stat-val{ font-family:monospace;font-size:13px;font-weight:600;color:#f0f0f0 }
+  .modal-sec-title{ font-family:monospace;font-size:9px;color:#444;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.55rem }
+  .modal-grid{ display:grid;grid-template-columns:1fr 1fr;gap:7px }
+  .modal-stat{ background:#0a0a0f;border:1px solid #1a1a2e;border-radius:7px;padding:7px 10px }
+  .modal-stat-lbl{ font-family:monospace;font-size:8px;color:#444;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px }
+  .modal-stat-val{ font-family:monospace;font-size:12px;font-weight:600;color:#f0f0f0 }
+  /* Big recommendation box in modal */
+  .modal-rec{ background:rgba(0,170,255,.05);border:1px solid rgba(0,170,255,.2);border-radius:9px;padding:.85rem 1rem;font-family:monospace;font-size:12px;color:#0af;line-height:1.7;display:flex;align-items:flex-start;gap:10px }
+  .modal-rec-icon{ font-size:18px;flex-shrink:0;margin-top:-1px }
 
-  /* ── Customer search (Tab 1) — live stream powered ─── */
-  .cs-root   { display:flex;flex-direction:column;height:calc(100vh - 155px);min-height:420px }
-  .cs-header { padding:.75rem 1rem;border-bottom:1px solid #1a1a2e;display:flex;align-items:center;gap:8px;background:#0d0d15;flex-shrink:0;flex-wrap:wrap }
-  .cs-search { background:#111;border:1px solid #252535;border-radius:8px;padding:7px 12px 7px 32px;color:#f0f0f0;font-family:monospace;font-size:12px;outline:none;flex:1;min-width:160px;transition:border-color .2s;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23444' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:10px center }
+  /* ─ Empty */
+  .db-empty{ padding:1.5rem;text-align:center;font-family:monospace;font-size:10px;color:#555 }
+
+  /* ════ Customer search (Tab 1) ════ */
+  .cs-root  { display:flex;flex-direction:column;flex:1;min-height:0;background:#111;border:1px solid #1e1e2e;border-radius:10px;overflow:hidden }
+  .cs-header{ display:flex;align-items:center;gap:7px;padding:.55rem .85rem;border-bottom:1px solid #1a1a2e;background:#0d0d15;flex-shrink:0;flex-wrap:wrap }
+  .cs-search{ background:#111;border:1px solid #252535;border-radius:7px;padding:6px 10px 6px 27px;color:#f0f0f0;font-family:monospace;font-size:11px;outline:none;flex:1;min-width:140px;transition:border-color .2s;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23444' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:9px center }
   .cs-search:focus{ border-color:#3a3a5a }
   .cs-search::placeholder{ color:#333 }
-  .cs-filter { background:#111;border:1px solid #252535;border-radius:8px;padding:7px 10px;color:#888;font-family:monospace;font-size:11px;outline:none;cursor:pointer;transition:border-color .2s }
+  .cs-filter{ background:#111;border:1px solid #252535;border-radius:7px;padding:6px 8px;color:#888;font-family:monospace;font-size:10px;outline:none;cursor:pointer }
   .cs-filter:focus{ border-color:#3a3a5a }
-
-  /* live indicator in header */
-  .cs-live-pill{ display:flex;align-items:center;gap:5px;font-family:monospace;font-size:10px;color:#30d158;background:#30d15812;border:1px solid #30d15828;border-radius:999px;padding:3px 9px;flex-shrink:0 }
+  .cs-live-pill{ display:flex;align-items:center;gap:4px;font-family:monospace;font-size:9px;color:#30d158;background:#30d15812;border:1px solid #30d15828;border-radius:999px;padding:2px 7px;flex-shrink:0 }
   .cs-count{ font-family:monospace;font-size:10px;color:#444;margin-left:auto;flex-shrink:0 }
-
-  .cs-tbl-wrap{ flex:1;overflow-y:auto;overflow-x:auto;minHeight:0 }
-  .cs-tbl{ width:100%;border-collapse:collapse }
+  .cs-tbl-wrap{ flex:1;overflow-y:auto;overflow-x:auto;min-height:0 }
+  .cs-tbl  { width:100%;border-collapse:collapse }
   .cs-tbl thead{ position:sticky;top:0;z-index:1 }
-  .cs-tbl th{ background:#0a0a12;font-family:monospace;font-size:9px;color:#3a3a5a;text-transform:uppercase;letter-spacing:.12em;font-weight:500;text-align:left;padding:.65rem 1rem;border-bottom:1px solid #1a1a2e;white-space:nowrap;user-select:none }
+  .cs-tbl th{ background:#0a0a12;font-family:monospace;font-size:9px;color:#3a3a5a;text-transform:uppercase;letter-spacing:.12em;font-weight:500;text-align:left;padding:.55rem .85rem;border-bottom:1px solid #1a1a2e;white-space:nowrap;user-select:none }
   .cs-tbl th.s{ cursor:pointer }
   .cs-tbl th.s:hover{ color:#666 }
   .cs-tbl th.active{ color:#888 }
-  .cs-tbl td{ padding:.6rem 1rem;border-bottom:1px solid #0f0f1a;vertical-align:middle;white-space:nowrap }
+  .cs-tbl td{ padding:.52rem .85rem;border-bottom:1px solid #0f0f1a;vertical-align:middle;white-space:nowrap }
   .cs-tbl tr:last-child td{ border-bottom:none }
-  .cs-tbl tbody tr{ transition:background .1s;cursor:default }
   .cs-tbl tbody tr:hover td{ background:rgba(255,255,255,.022) }
-  .cs-tbl tbody tr.new-row td{ animation:rowSlide .4s ease both }
-
-  .cs-id  { font-family:monospace;font-size:12px;font-weight:600;color:#e0e0e0;letter-spacing:.03em }
-  .cs-mono{ font-family:monospace;font-size:12px;color:#666 }
-  .cs-contract{ font-family:monospace;font-size:10px;padding:2px 7px;border-radius:4px;white-space:nowrap }
-  .cs-m2m{ background:#ff3b3b0a;color:#ff6b6b;border:1px solid #ff3b3b1a }
-  .cs-one{ background:#ff95000a;color:#ffaa30;border:1px solid #ff95001a }
-  .cs-two{ background:#30d1580a;color:#30d158;border:1px solid #30d1581a }
-  .cs-shap{ display:flex;align-items:center;gap:6px }
-  .cs-shap-feat{ font-family:monospace;font-size:10px;color:#666;min-width:90px }
-  .cs-shap-track{ width:40px;height:3px;background:#1e1e2e;border-radius:3px;flex-shrink:0 }
-  .cs-shap-num{ font-family:monospace;font-size:9px;color:#444 }
-  .cs-rec{ font-family:monospace;font-size:10px;color:#0af;max-width:200px;overflow:hidden;text-overflow:ellipsis }
-
-  .cs-footer{ display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem;border-top:1px solid #1a1a2e;flex-shrink:0;background:#0d0d15 }
+  .cs-id  { font-family:monospace;font-size:11px;font-weight:600;color:#e0e0e0;letter-spacing:.03em }
+  .cs-mono{ font-family:monospace;font-size:11px;color:#666 }
+  .cs-pill{ font-family:monospace;font-size:9px;padding:2px 6px;border-radius:3px;white-space:nowrap }
+  .cs-m2m { background:#ff3b3b0a;color:#ff6b6b;border:1px solid #ff3b3b1a }
+  .cs-one { background:#ff95000a;color:#ffaa30;border:1px solid #ff95001a }
+  .cs-two { background:#30d1580a;color:#30d158;border:1px solid #30d1581a }
+  .cs-shap{ display:flex;align-items:center;gap:5px }
+  .cs-shap-feat{ font-family:monospace;font-size:9px;color:#666;min-width:80px }
+  .cs-shap-track{ width:36px;height:3px;background:#1e1e2e;border-radius:3px;flex-shrink:0 }
+  .cs-shap-num{ font-family:monospace;font-size:8px;color:#444 }
+  .cs-rec { font-family:monospace;font-size:9px;color:#0af;max-width:180px;overflow:hidden;text-overflow:ellipsis }
+  .cs-footer{ display:flex;align-items:center;justify-content:space-between;padding:.45rem .85rem;border-top:1px solid #1a1a2e;flex-shrink:0;background:#0d0d15 }
   .cs-footer span{ font-family:monospace;font-size:10px;color:#444 }
-  .cs-pg{ background:#1a1a2e;border:1px solid #252535;border-radius:5px;color:#666;font-family:monospace;font-size:10px;padding:4px 10px;cursor:pointer;transition:all .15s }
+  .cs-pg{ background:#1a1a2e;border:1px solid #252535;border-radius:4px;color:#666;font-family:monospace;font-size:10px;padding:3px 8px;cursor:pointer;transition:all .15s }
   .cs-pg:hover:not(:disabled){ background:#252535;color:#aaa }
-  .cs-pg:disabled{ opacity:.25;cursor:not-allowed }
+  .cs-pg:disabled{ opacity:.22;cursor:not-allowed }
   .cs-pg-n{ font-family:monospace;font-size:10px;color:#555 }
 
-  /* ── Predict tab ──────────────────────────── */
-  .db-pred-grid{ display:grid;grid-template-columns:1fr 1fr;gap:10px }
-  @media(max-width:860px){ .db-pred-grid{ grid-template-columns:1fr } }
-  .db-field-grid{ display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:1rem }
-  .db-field    { display:flex;flex-direction:column;gap:4px }
-  .db-field-lbl{ font-size:11px;color:#555;font-family:monospace }
-  .db-field-inp{ background:#0a0a0f;border:1px solid #1e1e2e;border-radius:7px;padding:6px 10px;color:#f0f0f0;font-family:monospace;font-size:12px;outline:none;width:100%;transition:border-color .2s }
-  .db-field-inp:focus{ border-color:#333 }
-  .db-pred-btn{ margin:0 1rem 1rem;padding:11px;background:#ff3b3b;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;width:calc(100% - 2rem);transition:opacity .2s,transform .2s;font-family:inherit }
-  .db-pred-btn:hover:not(:disabled){ opacity:.88;transform:translateY(-1px) }
-  .db-pred-btn:disabled{ opacity:.4;cursor:not-allowed }
-  .db-result-box{ margin:0 1rem 1rem;background:#0a0a0f;border:1px solid #1e1e2e;border-radius:10px;padding:1rem }
-  .db-result-top{ display:flex;align-items:center;gap:1rem;margin-bottom:.85rem;padding-bottom:.75rem;border-bottom:1px solid #1e1e2e }
-  .db-result-prob{ font-family:monospace;font-size:2.6rem;font-weight:700;line-height:1 }
-  .db-result-lbl { font-size:13px;font-weight:600;margin-bottom:3px }
-  .db-result-sub { font-size:11px;color:#666;margin-bottom:6px }
-  .db-shap-title { font-size:10px;font-family:monospace;color:#555;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem }
-  .db-result-shap-row{ display:flex;align-items:center;gap:8px;margin-bottom:8px }
-  .db-result-shap-lbl{ font-size:11px;color:#ccc;width:130px;flex-shrink:0 }
-  .db-result-shap-bg{ flex:1;height:5px;background:#1e1e2e;border-radius:4px }
-  .db-result-shap-dir{ font-size:10px;font-family:monospace;width:85px;text-align:right;flex-shrink:0 }
-  .db-result-rec{ margin-top:.75rem;padding:.5rem .75rem;border:1px solid #0af3;border-radius:7px;font-family:monospace;font-size:11px;color:#0af;line-height:1.5;background:rgba(0,170,255,.03) }
+  /* ════ Predict tab — redesigned ════ */
+  .pred-root{ display:flex;flex-direction:column;flex:1;min-height:0;gap:0;overflow:auto }
+  .pred-grid{ display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:1;min-height:0 }
+
+  /* Form panel */
+  .pred-form{ background:#111;border:1px solid #1e1e2e;border-radius:10px;overflow:hidden;display:flex;flex-direction:column }
+  .pred-form-hdr{ padding:.6rem .9rem;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;flex-shrink:0 }
+  .pred-form-hdr-title{ font-size:12px;font-weight:700 }
+  .pred-form-hdr-sub{ font-family:monospace;font-size:10px;color:#555 }
+  .pred-body{ flex:1;overflow-y:auto;padding:.6rem .9rem;display:flex;flex-direction:column;gap:.85rem }
+
+  /* Section groups inside form */
+  .pred-section{ display:flex;flex-direction:column;gap:6px }
+  .pred-section-title{ font-family:monospace;font-size:9px;color:#444;text-transform:uppercase;letter-spacing:.12em;margin-bottom:2px;display:flex;align-items:center;gap:6px }
+  .pred-section-title::after{ content:'';flex:1;height:1px;background:#1a1a2e }
+  .pred-row{ display:grid;grid-template-columns:1fr 1fr;gap:7px }
+  .pred-row.three{ grid-template-columns:1fr 1fr 1fr }
+  .pred-row.full  { grid-template-columns:1fr }
+  .pred-field{ display:flex;flex-direction:column;gap:3px }
+  .pred-label{ font-size:10px;color:#555;font-family:monospace }
+  .pred-input{
+    background:#0a0a0f;
+    border:1px solid #1e1e2e;
+    border-radius:6px;
+    padding:6px 9px;
+    color:#f0f0f0;
+    font-family:monospace;
+    font-size:11px;
+    outline:none;
+    width:100%;
+    transition:border-color .2s,background .2s;
+    appearance:none;
+  }
+  .pred-input:focus{ border-color:#3a3a5a;background:#0f0f18 }
+  .pred-input:hover{ border-color:#2a2a3a }
+  .pred-submit-area{ padding:.65rem .9rem;border-top:1px solid #1e1e2e;flex-shrink:0 }
+  .pred-btn{
+    width:100%;padding:10px;
+    background:#ff3b3b;border:none;border-radius:7px;
+    color:#fff;font-size:12px;font-weight:700;cursor:pointer;
+    font-family:inherit;letter-spacing:-.01em;
+    transition:opacity .2s,transform .15s,box-shadow .2s;
+    display:flex;align-items:center;justify-content:center;gap:6px;
+  }
+  .pred-btn:hover:not(:disabled){ opacity:.88;transform:translateY(-1px);box-shadow:0 6px 20px rgba(255,59,59,.3) }
+  .pred-btn:disabled{ opacity:.4;cursor:not-allowed;transform:none;box-shadow:none }
+  .pred-btn-spinner{ width:13px;height:13px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite }
+  @keyframes spin{ to{transform:rotate(360deg)} }
+
+  /* Result panel */
+  .pred-result{ background:#111;border:1px solid #1e1e2e;border-radius:10px;overflow:hidden;display:flex;flex-direction:column }
+  .pred-result-hdr{ padding:.6rem .9rem;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;flex-shrink:0 }
+  .pred-result-body{ flex:1;overflow-y:auto;padding:.75rem .9rem;display:flex;flex-direction:column;gap:.85rem }
+
+  /* Score display */
+  .pred-score-wrap{ display:flex;align-items:center;gap:1rem;padding:.85rem;background:#0a0a0f;border:1px solid #1e1e2e;border-radius:9px }
+  .pred-score-num { font-family:monospace;font-size:2.8rem;font-weight:700;line-height:1;min-width:90px }
+  .pred-score-right{ flex:1 }
+  .pred-score-lbl { font-size:12px;font-weight:700;margin-bottom:3px }
+  .pred-score-risk { font-size:10px;color:#888;margin-bottom:8px }
+  .pred-prob-bar  { height:6px;background:#1e1e2e;border-radius:999px;overflow:hidden }
+  .pred-prob-fill { height:6px;border-radius:999px;transition:width .7s cubic-bezier(.22,1,.36,1) }
+
+  /* SHAP mini chart */
+  .pred-shap-row  { display:flex;align-items:center;gap:8px;margin-bottom:7px }
+  .pred-shap-lbl  { font-family:monospace;font-size:10px;color:#ccc;width:120px;flex-shrink:0 }
+  .pred-shap-bg   { flex:1;height:5px;background:#1e1e2e;border-radius:4px }
+  .pred-shap-dir  { font-family:monospace;font-size:9px;width:75px;text-align:right;flex-shrink:0 }
+  .pred-rec-box   { padding:.65rem .85rem;background:rgba(0,170,255,.04);border:1px solid rgba(0,170,255,.18);border-radius:8px;font-family:monospace;font-size:11px;color:#0af;line-height:1.6;display:flex;gap:8px;align-items:flex-start }
+  .pred-placeholder{ display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:10px;color:#444;text-align:center;padding:2rem }
+  .pred-placeholder-icon{ font-size:36px;opacity:.12 }
+  .pred-placeholder-text{ font-family:monospace;font-size:11px;line-height:1.7;color:#444 }
+  .pred-error{ padding:1rem;font-family:monospace;font-size:11px;color:#ff6b6b;word-break:break-all;background:#ff3b3b08;border-radius:7px;border:1px solid #ff3b3b1a }
+
+  /* ════ MOBILE ════ */
+  @media(max-width:768px){
+    html,body{ overflow:auto }
+    .db{ height:auto;overflow:visible;padding:.75rem }
+    .db-metrics{ grid-template-columns:repeat(2,1fr) }
+    .ov-layout{ grid-template-columns:1fr;height:auto;overflow:visible }
+    .ov-left  { overflow:visible;height:auto }
+    .ov-panel { flex:none;height:220px }
+    .ov-right { height:380px }
+    .cs-root  { height:calc(100vh - 120px) }
+    .pred-root{ overflow:visible }
+    .pred-grid{ grid-template-columns:1fr;height:auto }
+    .pred-form{ max-height:none }
+    .pred-result{ min-height:400px }
+    .pred-row.three{ grid-template-columns:1fr 1fr }
+    .db-hdr   { gap:4px }
+  }
+  @media(max-width:480px){
+    .db-metrics{ grid-template-columns:repeat(2,1fr) }
+    .cs-header{ gap:5px }
+    .cs-filter{ display:none }
+    .pred-row { grid-template-columns:1fr }
+    .pred-row.three{ grid-template-columns:1fr }
+  }
 `;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -282,9 +383,6 @@ function RiskBadge({ level, prob }: { level: string; prob: number }) {
   );
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// ENHANCED METRIC CARDS
-// ════════════════════════════════════════════════════════════════════════════
 function MetricCard({
   value,
   label,
@@ -292,10 +390,9 @@ function MetricCard({
   color,
   loading,
   delay = 0,
-  extra,
-  extraLabel,
-  badge,
-  badgeColor,
+  foot,
+  footBadge,
+  footBadgeColor,
 }: {
   value: string;
   label: string;
@@ -303,15 +400,13 @@ function MetricCard({
   color: string;
   loading?: boolean;
   delay?: number;
-  extra?: string;
-  extraLabel?: string;
-  badge?: string;
-  badgeColor?: string;
+  foot?: string;
+  footBadge?: string;
+  footBadgeColor?: string;
 }) {
   return (
     <div className="db-mc" style={{ animationDelay: `${delay}s` }}>
       <div className="db-mc-bar" style={{ background: color }} />
-      <div className="db-mc-glow" style={{ background: color }} />
       {loading ? (
         <div className="db-skel" />
       ) : (
@@ -321,23 +416,19 @@ function MetricCard({
       )}
       <div className="db-mc-lbl">{label}</div>
       <div className="db-mc-sub">{sub}</div>
-      {(extra || badge) && !loading && (
-        <div className="db-mc-extra">
-          {extra && (
-            <span className="db-mc-extra-val">
-              {extraLabel}: {extra}
-            </span>
-          )}
-          {badge && (
+      {(foot || footBadge) && !loading && (
+        <div className="db-mc-foot">
+          {foot && <span className="db-mc-foot-lbl">{foot}</span>}
+          {footBadge && (
             <span
-              className="db-mc-extra-badge"
+              className="db-mc-pill"
               style={{
-                color: badgeColor || color,
-                background: (badgeColor || color) + "15",
-                border: `1px solid ${badgeColor || color}30`,
+                color: footBadgeColor || color,
+                background: (footBadgeColor || color) + "18",
+                border: `1px solid ${footBadgeColor || color}30`,
               }}
             >
-              {badge}
+              {footBadge}
             </span>
           )}
         </div>
@@ -347,7 +438,7 @@ function MetricCard({
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// MODAL
+// MODAL — with prominent recommendation
 // ════════════════════════════════════════════════════════════════════════════
 function CustomerModal({
   customer,
@@ -361,6 +452,8 @@ function CustomerModal({
   );
   const color = rc(customer.risk_level);
   const prob = Math.round(customer.churn_probability * 100);
+  const action = deriveAction(customer);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
@@ -369,10 +462,10 @@ function CustomerModal({
             <div
               style={{
                 fontFamily: "monospace",
-                fontSize: 15,
+                fontSize: 14,
                 fontWeight: 700,
                 color: "#f0f0f0",
-                marginBottom: 5,
+                marginBottom: 4,
               }}
             >
               {customer.customer_id}
@@ -386,13 +479,15 @@ function CustomerModal({
             ✕ close
           </button>
         </div>
+
+        {/* Churn probability bar */}
         <div className="modal-sec">
           <div
             style={{
               display: "flex",
               alignItems: "baseline",
               justifyContent: "space-between",
-              marginBottom: 8,
+              marginBottom: 7,
             }}
           >
             <span
@@ -409,7 +504,7 @@ function CustomerModal({
             <span
               style={{
                 fontFamily: "monospace",
-                fontSize: 26,
+                fontSize: 24,
                 fontWeight: 700,
                 color,
               }}
@@ -419,7 +514,7 @@ function CustomerModal({
           </div>
           <div
             style={{
-              height: 8,
+              height: 7,
               background: "#1a1a2e",
               borderRadius: 999,
               overflow: "hidden",
@@ -427,15 +522,36 @@ function CustomerModal({
           >
             <div
               style={{
-                height: 8,
+                height: 7,
                 borderRadius: 999,
                 width: `${prob}%`,
                 background: `linear-gradient(90deg,${color}66,${color})`,
-                transition: "width .6s ease",
+                transition: "width .6s",
               }}
             />
           </div>
         </div>
+
+        {/* Recommendation — most prominent */}
+        <div className="modal-sec">
+          <div className="modal-sec-title">Recommended action</div>
+          <div className="modal-rec">
+            <span className="modal-rec-icon">⚡</span>
+            <div>
+              <div
+                style={{ fontWeight: 700, marginBottom: 4, color: "#7ad4ff" }}
+              >
+                {action}
+              </div>
+              <div style={{ color: "#0af", fontSize: 11, lineHeight: 1.7 }}>
+                {customer.recommendation ||
+                  "Contact this customer based on their risk profile and top churn drivers."}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Plan details */}
         <div className="modal-sec">
           <div className="modal-sec-title">Plan & account</div>
           <div className="modal-grid">
@@ -458,8 +574,10 @@ function CustomerModal({
             ))}
           </div>
         </div>
+
+        {/* SHAP */}
         <div className="modal-sec">
-          <div className="modal-sec-title">SHAP drivers</div>
+          <div className="modal-sec-title">SHAP churn drivers</div>
           {customer.shap_reasons?.map((r) => (
             <div
               key={r.feature}
@@ -467,15 +585,15 @@ function CustomerModal({
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
-                marginBottom: 10,
+                marginBottom: 9,
               }}
             >
               <span
                 style={{
                   fontFamily: "monospace",
-                  fontSize: 11,
+                  fontSize: 10,
                   color: "#ccc",
-                  width: 140,
+                  width: 130,
                   flexShrink: 0,
                 }}
               >
@@ -484,7 +602,7 @@ function CustomerModal({
               <div
                 style={{
                   flex: 1,
-                  height: 6,
+                  height: 5,
                   background: "#1a1a2e",
                   borderRadius: 4,
                   overflow: "hidden",
@@ -492,20 +610,20 @@ function CustomerModal({
               >
                 <div
                   style={{
-                    height: 6,
+                    height: 5,
                     borderRadius: 4,
                     width: `${Math.min((Math.abs(r.shap_impact) / maxImp) * 100, 100)}%`,
                     background:
                       r.direction === "increases risk" ? "#ff3b3b" : "#30d158",
-                    transition: "width .6s",
+                    transition: "width .5s",
                   }}
                 />
               </div>
               <span
                 style={{
                   fontFamily: "monospace",
-                  fontSize: 10,
-                  width: 65,
+                  fontSize: 9,
+                  width: 60,
                   textAlign: "right",
                   flexShrink: 0,
                   color:
@@ -517,42 +635,38 @@ function CustomerModal({
             </div>
           ))}
         </div>
-        {customer.recommendation && (
-          <div className="modal-sec">
-            <div className="modal-sec-title">Recommended action</div>
-            <div
-              style={{
-                background: "rgba(0,170,255,.04)",
-                border: "1px solid rgba(0,170,255,.15)",
-                borderRadius: 8,
-                padding: ".75rem 1rem",
-                fontFamily: "monospace",
-                fontSize: 12,
-                color: "#0af",
-                lineHeight: 1.6,
-              }}
-            >
-              → {customer.recommendation}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
-// SHAP custom tooltip
-function ShapTooltip({ active, payload }: any) {
+// SHAP tooltip
+function ShapTT({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div className="shap-tt">
-      <div style={{ color: "#888", marginBottom: 3 }}>{d.feature}</div>
+    <div
+      style={{
+        background: "#111",
+        border: "1px solid #1e1e2e",
+        borderRadius: 7,
+        padding: "6px 9px",
+        fontFamily: "monospace",
+        fontSize: 10,
+        color: "#f0f0f0",
+      }}
+    >
+      <div style={{ color: "#888", marginBottom: 2 }}>{d.fullName}</div>
       <div>
         Impact:{" "}
         <span
           style={{
-            color: d.importance > 0.5 ? "#ff3b3b" : "#ff9500",
+            color:
+              d.importance > 0.5
+                ? "#ff3b3b"
+                : d.importance > 0.3
+                  ? "#ff9500"
+                  : "#0af",
             fontWeight: 700,
           }}
         >
@@ -595,31 +709,26 @@ function OverviewTab({
       c.customer_id.toLowerCase().includes(pqSearch.trim().toLowerCase()),
   );
 
-  // Prepare SHAP data for BarChart (horizontal)
   const shapData = features
-    .slice(0, 8)
+    .slice(0, 7)
     .map((f) => ({
-      feature: f.feature.length > 16 ? f.feature.slice(0, 15) + "…" : f.feature,
+      feature: f.feature.length > 14 ? f.feature.slice(0, 13) + "…" : f.feature,
       fullName: f.feature,
       importance: f.importance,
     }))
-    .reverse(); // reverse so highest is at top
+    .reverse();
+  const maxImp = features[0]?.importance ?? 1;
 
   const trendInsight =
     trend.length > 0
-      ? `Churn hits ${Math.max(...trend.map((t) => t.churn_rate))}% in the first cohort and drops to ${Math.min(...trend.map((t) => t.churn_rate))}% among long-tenured customers — the first 6 months are your highest-risk window.`
+      ? `Churn peaks at ${Math.max(...trend.map((t) => t.churn_rate))}% in early cohorts — the first 6 months are your highest-risk window.`
       : "";
   const shapInsight =
     features.length > 0
-      ? `${features[0]?.feature} is the single strongest churn signal — customers flagged by it are disproportionately likely to leave.`
+      ? `${features[0]?.feature} is the dominant churn signal, followed by ${features[1]?.feature}.`
       : "";
 
-  const H = "calc(100vh - 300px)";
-
-  // Derive extra card stats from summary + priority
-  const criticalCount = priority.filter(
-    (c) => c.risk_level === "critical",
-  ).length;
+  const critCount = priority.filter((c) => c.risk_level === "critical").length;
   const highCount = priority.filter((c) => c.risk_level === "high").length;
   const avgRisk =
     priority.length > 0
@@ -630,329 +739,301 @@ function OverviewTab({
         )
       : null;
 
+  // Action badge class
+  const actionClass = (c: Customer) => {
+    if (c.risk_level === "critical") return "pq-action urgent";
+    if (c.risk_level === "high") return "pq-action reach";
+    return "pq-action watch";
+  };
+
   return (
     <>
       {selected && (
         <CustomerModal customer={selected} onClose={() => setSelected(null)} />
       )}
 
-      {/* Enhanced metric cards */}
       <div className="db-metrics">
         <MetricCard
           value={summary ? summary.total_customers.toLocaleString() : "—"}
           label="Total customers"
-          sub="In loaded dataset"
+          sub="In dataset"
           color="#0af"
           loading={!summary}
           delay={0}
-          extra={summary ? `${summary.churn_rate_pct}% churn rate` : undefined}
-          extraLabel="Overall"
-          badge={
-            summary
-              ? `${Math.round((summary.total_customers * summary.churn_rate_pct) / 100)} at risk`
-              : undefined
-          }
-          badgeColor="#ff9500"
+          foot={summary ? `${summary.churn_rate_pct}% churn` : undefined}
+          footBadge={critCount > 0 ? `${critCount} critical` : undefined}
+          footBadgeColor="#ff3b3b"
         />
         <MetricCard
           value={summary ? `${summary.churn_rate_pct}%` : "—"}
-          label="Overall churn rate"
-          sub="Actual churned in dataset"
+          label="Churn rate"
+          sub="Actual churned"
           color="#ff3b3b"
           loading={!summary}
-          delay={0.06}
-          extra={summary ? `£${summary.avg_monthly_charges}/mo avg` : undefined}
-          extraLabel="ARPU"
-          badge={
-            criticalCount > 0 ? `${criticalCount} critical now` : undefined
-          }
-          badgeColor="#ff3b3b"
+          delay={0.05}
+          foot={highCount > 0 ? `${highCount} high-risk flagged` : undefined}
+          footBadge={avgRisk !== null ? `avg ${avgRisk}%` : undefined}
+          footBadgeColor="#ff9500"
         />
         <MetricCard
           value={summary ? gbp(summary.monthly_revenue_lost) : "—"}
-          label="Monthly revenue lost"
-          sub="From churned customers"
+          label="Monthly lost"
+          sub="From churned"
           color="#ff9500"
           loading={!summary}
-          delay={0.12}
-          extra={
-            summary ? gbp((summary.annual_revenue_lost / 12) * 3) : undefined
-          }
-          extraLabel="Q1 at risk"
-          badge="Per month"
-          badgeColor="#ff9500"
+          delay={0.1}
+          foot={summary ? `£${summary.avg_monthly_charges} avg` : undefined}
+          footBadge="Per month"
+          footBadgeColor="#ff9500"
         />
         <MetricCard
           value={summary ? gbp(summary.annual_revenue_lost) : "—"}
-          label="Annual revenue at risk"
-          sub="Projected from churn rate"
+          label="Annual at risk"
+          sub="Projected"
           color="#ff3b3b"
           loading={!summary}
-          delay={0.18}
-          extra={highCount > 0 ? `${highCount} high-risk` : undefined}
-          extraLabel="Stream"
-          badge={avgRisk !== null ? `Avg risk ${avgRisk}%` : undefined}
-          badgeColor="#ff9500"
+          delay={0.15}
+          foot="12-month projection"
+          footBadge={allPQ.length > 0 ? `${allPQ.length} flagged` : undefined}
+          footBadgeColor="#ff9500"
         />
         <MetricCard
           value={summary ? `£${summary.avg_monthly_charges}` : "—"}
-          label="Avg monthly charge"
-          sub="Across all customers"
+          label="Avg charge"
+          sub="Per customer/month"
           color="#30d158"
           loading={!summary}
-          delay={0.24}
-          extra={summary ? gbp(summary.avg_monthly_charges * 12) : undefined}
-          extraLabel="Annual ARPU"
-          badge="Per customer"
-          badgeColor="#30d158"
+          delay={0.2}
+          foot="Monthly ARPU"
+          footBadge={
+            summary ? gbp(summary.avg_monthly_charges * 12) + " /yr" : undefined
+          }
+          footBadgeColor="#30d158"
         />
       </div>
 
-      {/* Charts */}
-      <div className="db-2col">
-        {/* Trend line */}
-        <div className="db-panel">
-          <div className="db-ph">
-            <span className="db-pt">Churn rate by tenure cohort</span>
-            <span className="db-ps">% churned · /trend</span>
+      <div className="ov-layout">
+        {/* Left column */}
+        <div className="ov-left">
+          {/* 1. Trend */}
+          <div className="ov-panel">
+            <div className="ov-ph">
+              <span className="ov-pt">Churn rate by tenure cohort</span>
+              <span className="ov-ps">% churned · /trend</span>
+            </div>
+            {trendInsight && <div className="ov-insight">{trendInsight}</div>}
+            <div className="ov-chart-wrap">
+              {trend.length === 0 ? (
+                <div className="db-empty">Loading…</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={trend}
+                    margin={{ top: 6, right: 12, bottom: 0, left: -20 }}
+                  >
+                    <CartesianGrid
+                      stroke="#1e1e2e"
+                      strokeDasharray="3 3"
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="period"
+                      tick={{
+                        fontFamily: "monospace",
+                        fontSize: 8,
+                        fill: "#555",
+                      }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{
+                        fontFamily: "monospace",
+                        fontSize: 8,
+                        fill: "#555",
+                      }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => `${v}%`}
+                    />
+                    <Tooltip
+                      {...TT}
+                      formatter={(v: number) => [`${v}%`, "Churn rate"]}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="churn_rate"
+                      stroke="#ff3b3b"
+                      strokeWidth={2}
+                      dot={{ fill: "#ff3b3b", r: 2.5, strokeWidth: 0 }}
+                      activeDot={{ r: 4 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
           </div>
-          {trendInsight && (
-            <div className="db-chart-insight">{trendInsight}</div>
-          )}
-          <div style={{ padding: "0.75rem 0.25rem 0.5rem", height: 200 }}>
-            {trend.length === 0 ? (
-              <div className="db-empty">Loading…</div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={trend}
-                  margin={{ top: 8, right: 14, bottom: 0, left: -18 }}
-                >
-                  <CartesianGrid
-                    stroke="#1e1e2e"
-                    strokeDasharray="3 3"
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey="period"
-                    tick={{
-                      fontFamily: "monospace",
-                      fontSize: 9,
-                      fill: "#555",
-                    }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{
-                      fontFamily: "monospace",
-                      fontSize: 9,
-                      fill: "#555",
-                    }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) => `${v}%`}
-                  />
-                  <Tooltip
-                    {...TT}
-                    formatter={(v: number) => [`${v}%`, "Churn rate"]}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="churn_rate"
-                    stroke="#ff3b3b"
-                    strokeWidth={2.5}
-                    dot={{ fill: "#ff3b3b", r: 3, strokeWidth: 0 }}
-                    activeDot={{ r: 5, fill: "#ff3b3b" }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
 
-        {/* SHAP horizontal bar chart */}
-        <div className="db-panel">
-          <div className="db-ph">
-            <span className="db-pt">Top churn drivers — SHAP importance</span>
-            <span className="db-ps">Mean |SHAP| · /features</span>
+          {/* 2. SHAP */}
+          <div className="ov-panel">
+            <div className="ov-ph">
+              <span className="ov-pt">Top churn drivers — SHAP importance</span>
+              <span className="ov-ps">Mean |SHAP| · /features</span>
+            </div>
+            {shapInsight && <div className="ov-insight">{shapInsight}</div>}
+            <div className="ov-chart-wrap">
+              {features.length === 0 ? (
+                <div className="db-empty">Computing SHAP…</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={shapData}
+                    layout="vertical"
+                    margin={{ top: 4, right: 32, bottom: 4, left: 6 }}
+                  >
+                    <CartesianGrid
+                      stroke="#1a1a2e"
+                      strokeDasharray="3 3"
+                      horizontal={false}
+                    />
+                    <XAxis
+                      type="number"
+                      tick={{
+                        fontFamily: "monospace",
+                        fontSize: 8,
+                        fill: "#555",
+                      }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => v.toFixed(2)}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="feature"
+                      width={96}
+                      tick={{
+                        fontFamily: "monospace",
+                        fontSize: 8,
+                        fill: "#888",
+                      }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip content={<ShapTT />} />
+                    <Bar dataKey="importance" radius={[0, 3, 3, 0]}>
+                      {shapData.map((d, i) => {
+                        const r = d.importance / maxImp;
+                        return (
+                          <Cell
+                            key={i}
+                            fill={
+                              r > 0.7 ? "#ff3b3b" : r > 0.4 ? "#ff9500" : "#0af"
+                            }
+                            fillOpacity={0.85}
+                          />
+                        );
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
           </div>
-          {shapInsight && <div className="db-chart-insight">{shapInsight}</div>}
-          <div style={{ padding: "0.5rem 0.5rem 0.5rem 0", height: 210 }}>
-            {features.length === 0 ? (
-              <div className="db-empty">Computing SHAP values…</div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={shapData}
-                  layout="vertical"
-                  margin={{ top: 4, right: 48, bottom: 4, left: 8 }}
-                >
-                  <CartesianGrid
-                    stroke="#1a1a2e"
-                    strokeDasharray="3 3"
-                    horizontal={false}
-                  />
-                  <XAxis
-                    type="number"
-                    tick={{
-                      fontFamily: "monospace",
-                      fontSize: 9,
-                      fill: "#555",
-                    }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) => v.toFixed(2)}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="feature"
-                    width={110}
-                    tick={{
-                      fontFamily: "monospace",
-                      fontSize: 9,
-                      fill: "#888",
-                    }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip content={<ShapTooltip />} />
-                  <Bar dataKey="importance" radius={[0, 4, 4, 0]}>
-                    {shapData.map((d, i) => {
-                      const max =
-                        shapData[shapData.length - 1]?.importance ?? 1;
-                      const ratio = d.importance / max;
-                      const color =
-                        ratio > 0.7
-                          ? "#ff3b3b"
-                          : ratio > 0.4
-                            ? "#ff9500"
-                            : "#0af";
-                      return <Cell key={i} fill={color} fillOpacity={0.85} />;
-                    })}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-      </div>
 
-      {/* Feed + Priority */}
-      <div className="db-feed-pq">
-        {/* Live stream */}
-        <div
-          className="db-panel"
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            height: H,
-            minHeight: 280,
-          }}
-        >
-          <div className="db-ph" style={{ flexShrink: 0 }}>
-            <span className="db-pt">Live stream</span>
-            <span
-              className="db-ps"
-              style={{
-                color:
-                  streamStatus === "live"
-                    ? "#30d158"
-                    : streamStatus === "error"
-                      ? "#ff3b3b"
-                      : "#ff9500",
-              }}
-            >
-              {streamStatus === "live"
-                ? "● /stream"
-                : streamStatus === "connecting"
-                  ? "◌ connecting…"
-                  : "✕ error"}
-            </span>
-          </div>
-          <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-            {feed.length === 0 ? (
-              <div className="db-empty">Waiting…</div>
-            ) : (
-              feed.map((c) => (
-                <div
-                  key={`${c.customer_id}-${c.churn_probability}`}
-                  className="db-feed-row"
-                  style={{
-                    background:
-                      c.risk_level === "critical"
-                        ? "rgba(255,59,59,0.03)"
-                        : "transparent",
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div className="db-feed-id">{c.customer_id}</div>
-                    <div className="db-feed-sub">
-                      {Math.round(c.tenure)}mo · £
-                      {c.monthly_charges?.toFixed(0)}
+          {/* 3. Live feed */}
+          <div className="ov-panel">
+            <div className="ov-ph">
+              <span className="ov-pt">Live prediction stream</span>
+              <span
+                className="ov-ps"
+                style={{
+                  color:
+                    streamStatus === "live"
+                      ? "#30d158"
+                      : streamStatus === "error"
+                        ? "#ff3b3b"
+                        : "#ff9500",
+                }}
+              >
+                {streamStatus === "live"
+                  ? "● /stream"
+                  : streamStatus === "connecting"
+                    ? "◌ connecting…"
+                    : "✕ error"}
+              </span>
+            </div>
+            <div className="ov-feed-scroll">
+              {feed.length === 0 ? (
+                <div className="db-empty">Waiting…</div>
+              ) : (
+                feed.map((c) => (
+                  <div
+                    key={`${c.customer_id}-${c.churn_probability}`}
+                    className="ov-feed-row"
+                    style={{
+                      background:
+                        c.risk_level === "critical"
+                          ? "rgba(255,59,59,0.03)"
+                          : "transparent",
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div className="ov-feed-id">{c.customer_id}</div>
+                      <div className="ov-feed-sub">
+                        {c.contract} · {Math.round(c.tenure)}mo · £
+                        {c.monthly_charges?.toFixed(0)}/mo
+                      </div>
                     </div>
+                    <RiskBadge
+                      level={c.risk_level}
+                      prob={c.churn_probability}
+                    />
+                    {c.customer_id === newestId && <div className="ov-ping" />}
                   </div>
-                  <RiskBadge level={c.risk_level} prob={c.churn_probability} />
-                  {c.customer_id === newestId && <div className="db-ping" />}
-                </div>
-              ))
-            )}
-          </div>
-          <div className="db-ftr">
-            <div className="db-dot-r" />
-            <span>~2s per prediction</span>
+                ))
+              )}
+            </div>
+            <div className="ov-ftr">
+              <div className="db-dot-r" />
+              <span>New prediction every ~2 seconds</span>
+            </div>
           </div>
         </div>
 
-        {/* Priority queue */}
-        <div
-          className="db-panel"
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            height: H,
-            minHeight: 280,
-          }}
-        >
-          <div className="db-ph" style={{ flexShrink: 0 }}>
-            <span className="db-pt">Priority action queue</span>
-            <span className="db-ps">
-              critical · high · medium · click for details
+        {/* Right column — priority queue */}
+        <div className="ov-right">
+          <div className="pq-hdr">
+            <span className="pq-pt">Priority action queue</span>
+            <span className="pq-ps">
+              critical · high · medium · click row for details
             </span>
           </div>
           <div className="pq-bar">
             <input
-              className="pq-search"
+              className="pq-srch"
               placeholder="Search customer ID…"
               value={pqSearch}
               onChange={(e) => setPqSearch(e.target.value)}
               spellCheck={false}
             />
-            <span className="pq-count">
+            <span className="pq-cnt">
               {pqRows.length} / {allPQ.length}
             </span>
           </div>
-          <div
-            style={{
-              flex: 1,
-              overflowY: "auto",
-              overflowX: "auto",
-              minHeight: 0,
-            }}
-          >
+          <div className="pq-scroll">
             {allPQ.length === 0 ? (
               <div className="db-empty">
-                Building…
+                Building from stream…
                 <br />
                 <span
                   style={{
-                    fontSize: 10,
+                    fontSize: 9,
                     color: "#333",
                     display: "block",
                     marginTop: 4,
                   }}
                 >
-                  Appears as stream scores customers
+                  Medium / high / critical appear here
                 </span>
               </div>
             ) : pqRows.length === 0 ? (
@@ -963,12 +1044,13 @@ function OverviewTab({
                   <tr>
                     {[
                       "#",
-                      "Customer ID",
+                      "Customer",
                       "Risk",
                       "Contract",
                       "Tenure",
                       "£/mo",
                       "Top driver",
+                      "Action",
                     ].map((h) => (
                       <th key={h}>{h}</th>
                     ))}
@@ -983,6 +1065,8 @@ function OverviewTab({
                     const q = pqSearch.trim().toLowerCase();
                     const id = c.customer_id;
                     const idx = q ? id.toLowerCase().indexOf(q) : -1;
+                    const action = deriveAction(c);
+                    const aClass = actionClass(c);
                     return (
                       <tr
                         key={c.customer_id}
@@ -997,9 +1081,9 @@ function OverviewTab({
                         <td
                           style={{
                             fontFamily: "monospace",
-                            fontSize: 10,
+                            fontSize: 9,
                             color: "#444",
-                            width: 24,
+                            width: 20,
                           }}
                         >
                           {i + 1}
@@ -1007,7 +1091,7 @@ function OverviewTab({
                         <td
                           style={{
                             fontFamily: "monospace",
-                            fontSize: "clamp(11px,.95vw,12px)",
+                            fontSize: "clamp(9px,.85vw,11px)",
                             fontWeight: 600,
                             color: "#e0e0e0",
                           }}
@@ -1040,7 +1124,7 @@ function OverviewTab({
                         <td
                           style={{
                             fontFamily: "monospace",
-                            fontSize: "clamp(9px,.8vw,10px)",
+                            fontSize: "clamp(8px,.7vw,10px)",
                             color: "#666",
                           }}
                         >
@@ -1049,7 +1133,7 @@ function OverviewTab({
                         <td
                           style={{
                             fontFamily: "monospace",
-                            fontSize: "clamp(9px,.8vw,10px)",
+                            fontSize: "clamp(8px,.7vw,10px)",
                             color: "#666",
                           }}
                         >
@@ -1058,7 +1142,7 @@ function OverviewTab({
                         <td
                           style={{
                             fontFamily: "monospace",
-                            fontSize: "clamp(9px,.8vw,10px)",
+                            fontSize: "clamp(8px,.7vw,10px)",
                             color: "#666",
                           }}
                         >
@@ -1070,22 +1154,22 @@ function OverviewTab({
                               style={{
                                 display: "flex",
                                 alignItems: "center",
-                                gap: 6,
+                                gap: 5,
                               }}
                             >
                               <span
                                 style={{
                                   fontFamily: "monospace",
-                                  fontSize: 10,
+                                  fontSize: 9,
                                   color: "#666",
-                                  minWidth: 80,
+                                  minWidth: 65,
                                 }}
                               >
                                 {top.feature}
                               </span>
                               <div
                                 style={{
-                                  width: 32,
+                                  width: 26,
                                   height: 3,
                                   background: "#1e1e2e",
                                   borderRadius: 3,
@@ -1104,20 +1188,14 @@ function OverviewTab({
                                   }}
                                 />
                               </div>
-                              <span
-                                style={{
-                                  fontFamily: "monospace",
-                                  fontSize: 9,
-                                  color: "#444",
-                                }}
-                              >
-                                {top.shap_impact > 0 ? "+" : ""}
-                                {top.shap_impact.toFixed(2)}
-                              </span>
                             </div>
                           ) : (
                             "—"
                           )}
+                        </td>
+                        {/* Action column — derived from recommendation */}
+                        <td>
+                          <span className={aClass}>{action}</span>
                         </td>
                       </tr>
                     );
@@ -1133,7 +1211,7 @@ function OverviewTab({
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TAB 1 — CUSTOMER SEARCH (powered by live stream data)
+// TAB 1 — CUSTOMER SEARCH
 // ════════════════════════════════════════════════════════════════════════════
 function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
   const [query, setQuery] = useState("");
@@ -1144,16 +1222,15 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
   const [page, setPage] = useState(0);
   const PAGE = 15;
 
-  const contractClass = (c: string) =>
+  const cClass = (c: string) =>
     c === "Month-to-month"
-      ? "cs-contract cs-m2m"
+      ? "cs-pill cs-m2m"
       : c === "One year"
-        ? "cs-contract cs-one"
-        : "cs-contract cs-two";
+        ? "cs-pill cs-one"
+        : "cs-pill cs-two";
 
   const filtered = streamCustomers
     .filter((c) => {
-      // trim + lowercase for robust search
       const q = query.trim().toLowerCase();
       return (
         (!q ||
@@ -1188,12 +1265,11 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
     sortKey === k ? (sortDir === "desc" ? " ↓" : " ↑") : "";
 
   return (
-    <div className="db-panel cs-root">
-      {/* Toolbar */}
+    <div className="cs-root">
       <div className="cs-header">
         <input
           className="cs-search"
-          placeholder="Search by customer ID, contract, risk…"
+          placeholder="Search by customer ID, contract, risk level…"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -1209,7 +1285,7 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
             setPage(0);
           }}
         >
-          <option value="">All risk levels</option>
+          <option value="">All risk</option>
           <option value="critical">Critical</option>
           <option value="high">High</option>
           <option value="medium">Medium</option>
@@ -1228,43 +1304,29 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
           <option value="One year">One year</option>
           <option value="Two year">Two year</option>
         </select>
-        {/* Live indicator */}
         <div className="cs-live-pill">
           <div
             style={{
-              width: 5,
-              height: 5,
+              width: 4,
+              height: 4,
               borderRadius: "50%",
               background: "#30d158",
               animation: "pulse 2s infinite",
             }}
           />
-          live stream
+          live
         </div>
         <span className="cs-count">
-          {filtered.length} of {streamCustomers.length} customers
+          {filtered.length} / {streamCustomers.length}
         </span>
       </div>
-
-      {/* Table */}
       <div className="cs-tbl-wrap">
         {streamCustomers.length === 0 ? (
           <div className="db-empty" style={{ paddingTop: "3rem" }}>
-            <div style={{ fontSize: 24, opacity: 0.15, marginBottom: 12 }}>
+            <div style={{ fontSize: 28, opacity: 0.1, marginBottom: 10 }}>
               ⚡
             </div>
             Waiting for stream data…
-            <br />
-            <span
-              style={{
-                fontSize: 10,
-                color: "#333",
-                display: "block",
-                marginTop: 6,
-              }}
-            >
-              Customers appear here as /stream scores them in real time
-            </span>
           </div>
         ) : filtered.length === 0 ? (
           <div className="db-empty">No customers match your filters.</div>
@@ -1297,9 +1359,8 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
               </tr>
             </thead>
             <tbody>
-              {paged.map((c, i) => {
+              {paged.map((c) => {
                 const top = c.shap_reasons?.[0];
-                // Highlight search match in customer ID
                 const q = query.trim().toLowerCase();
                 const id = c.customer_id;
                 const idx = q ? id.toLowerCase().indexOf(q) : -1;
@@ -1334,9 +1395,7 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
                       />
                     </td>
                     <td>
-                      <span className={contractClass(c.contract)}>
-                        {c.contract}
-                      </span>
+                      <span className={cClass(c.contract)}>{c.contract}</span>
                     </td>
                     <td>
                       <span className="cs-mono">{Math.round(c.tenure)}mo</span>
@@ -1384,16 +1443,14 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
           </table>
         )}
       </div>
-
-      {/* Footer */}
       <div className="cs-footer">
         <span>
           {streamCustomers.length === 0
             ? "Waiting for stream…"
-            : `Showing ${paged.length} of ${filtered.length} · ${streamCustomers.length} total scored`}
+            : `${paged.length} of ${filtered.length} · ${streamCustomers.length} total scored`}
         </span>
         {pages > 1 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <button
               className="cs-pg"
               disabled={page === 0}
@@ -1402,7 +1459,7 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
               ← Prev
             </button>
             <span className="cs-pg-n">
-              {page + 1} / {pages}
+              {page + 1}/{pages}
             </span>
             <button
               className="cs-pg"
@@ -1419,122 +1476,149 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TAB 2 — PREDICT
+// TAB 2 — PREDICT (redesigned)
 // ════════════════════════════════════════════════════════════════════════════
+
+// Form field definition
+const FORM_SECTIONS = [
+  {
+    title: "Personal",
+    rows: [
+      [
+        { key: "gender", label: "Gender", options: ["Male", "Female"] },
+        {
+          key: "SeniorCitizen",
+          label: "Senior citizen",
+          options: ["No", "Yes"],
+        },
+        { key: "Partner", label: "Partner", options: ["Yes", "No"] },
+        { key: "Dependents", label: "Dependents", options: ["Yes", "No"] },
+      ],
+    ],
+  },
+  {
+    title: "Account",
+    rows: [
+      [
+        { key: "tenure", label: "Tenure (months)", type: "number" },
+        { key: "MonthlyCharges", label: "Monthly £", type: "number" },
+        { key: "TotalCharges", label: "Total £", type: "number" },
+      ],
+      [
+        {
+          key: "Contract",
+          label: "Contract",
+          options: ["Month-to-month", "One year", "Two year"],
+        },
+        { key: "PaperlessBilling", label: "Paperless", options: ["Yes", "No"] },
+        {
+          key: "PaymentMethod",
+          label: "Payment method",
+          options: [
+            "Electronic check",
+            "Mailed check",
+            "Bank transfer (automatic)",
+            "Credit card (automatic)",
+          ],
+        },
+      ],
+    ],
+  },
+  {
+    title: "Services",
+    rows: [
+      [
+        { key: "PhoneService", label: "Phone", options: ["Yes", "No"] },
+        {
+          key: "MultipleLines",
+          label: "Multi-line",
+          options: ["No", "Yes", "No phone service"],
+        },
+        {
+          key: "InternetService",
+          label: "Internet",
+          options: ["Fiber optic", "DSL", "No"],
+        },
+      ],
+      [
+        {
+          key: "OnlineSecurity",
+          label: "Online security",
+          options: ["No", "Yes", "No internet service"],
+        },
+        {
+          key: "OnlineBackup",
+          label: "Online backup",
+          options: ["No", "Yes", "No internet service"],
+        },
+        {
+          key: "DeviceProtection",
+          label: "Device protect",
+          options: ["No", "Yes", "No internet service"],
+        },
+      ],
+      [
+        {
+          key: "TechSupport",
+          label: "Tech support",
+          options: ["No", "Yes", "No internet service"],
+        },
+        {
+          key: "StreamingTV",
+          label: "Streaming TV",
+          options: ["No", "Yes", "No internet service"],
+        },
+        {
+          key: "StreamingMovies",
+          label: "Streaming movies",
+          options: ["No", "Yes", "No internet service"],
+        },
+      ],
+    ],
+  },
+];
+
+const DEFAULT_FORM: Record<string, string> = {
+  gender: "Male",
+  SeniorCitizen: "No",
+  Partner: "No",
+  Dependents: "No",
+  tenure: "2",
+  MonthlyCharges: "94.50",
+  TotalCharges: "189.00",
+  Contract: "Month-to-month",
+  PaperlessBilling: "Yes",
+  PaymentMethod: "Electronic check",
+  PhoneService: "Yes",
+  MultipleLines: "No",
+  InternetService: "Fiber optic",
+  OnlineSecurity: "No",
+  OnlineBackup: "No",
+  DeviceProtection: "No",
+  TechSupport: "No",
+  StreamingTV: "No",
+  StreamingMovies: "No",
+};
+
 function PredictTab() {
-  const [form, setForm] = useState({
-    gender: "Male",
-    SeniorCitizen: "0",
-    Partner: "No",
-    Dependents: "No",
-    tenure: "2",
-    PhoneService: "Yes",
-    MultipleLines: "No",
-    InternetService: "Fiber optic",
-    OnlineSecurity: "No",
-    OnlineBackup: "No",
-    DeviceProtection: "No",
-    TechSupport: "No",
-    StreamingTV: "No",
-    StreamingMovies: "No",
-    Contract: "Month-to-month",
-    PaperlessBilling: "Yes",
-    PaymentMethod: "Electronic check",
-    MonthlyCharges: "94.50",
-    TotalCharges: "189.00",
-  });
+  const [form, setForm] = useState<Record<string, string>>(DEFAULT_FORM);
   const [result, setResult] = useState<Customer | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoad] = useState(false);
   const [error, setError] = useState("");
+
   const setF = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
-  const FIELDS: Array<{
-    key: string;
-    label: string;
-    type?: string;
-    options?: string[];
-  }> = [
-    { key: "gender", label: "Gender", options: ["Male", "Female"] },
-    { key: "SeniorCitizen", label: "Senior citizen", options: ["0", "1"] },
-    { key: "Partner", label: "Partner", options: ["Yes", "No"] },
-    { key: "Dependents", label: "Dependents", options: ["Yes", "No"] },
-    { key: "tenure", label: "Tenure (months)", type: "number" },
-    { key: "MonthlyCharges", label: "Monthly charges (£)", type: "number" },
-    { key: "TotalCharges", label: "Total charges (£)", type: "number" },
-    { key: "PhoneService", label: "Phone service", options: ["Yes", "No"] },
-    {
-      key: "MultipleLines",
-      label: "Multiple lines",
-      options: ["No", "Yes", "No phone service"],
-    },
-    {
-      key: "InternetService",
-      label: "Internet service",
-      options: ["Fiber optic", "DSL", "No"],
-    },
-    {
-      key: "OnlineSecurity",
-      label: "Online security",
-      options: ["No", "Yes", "No internet service"],
-    },
-    {
-      key: "OnlineBackup",
-      label: "Online backup",
-      options: ["No", "Yes", "No internet service"],
-    },
-    {
-      key: "DeviceProtection",
-      label: "Device protection",
-      options: ["No", "Yes", "No internet service"],
-    },
-    {
-      key: "TechSupport",
-      label: "Tech support",
-      options: ["No", "Yes", "No internet service"],
-    },
-    {
-      key: "StreamingTV",
-      label: "Streaming TV",
-      options: ["No", "Yes", "No internet service"],
-    },
-    {
-      key: "StreamingMovies",
-      label: "Streaming movies",
-      options: ["No", "Yes", "No internet service"],
-    },
-    {
-      key: "Contract",
-      label: "Contract type",
-      options: ["Month-to-month", "One year", "Two year"],
-    },
-    {
-      key: "PaperlessBilling",
-      label: "Paperless billing",
-      options: ["Yes", "No"],
-    },
-    {
-      key: "PaymentMethod",
-      label: "Payment method",
-      options: [
-        "Electronic check",
-        "Mailed check",
-        "Bank transfer (automatic)",
-        "Credit card (automatic)",
-      ],
-    },
-  ];
-
   const run = async () => {
-    setLoading(true);
+    setLoad(true);
     setError("");
     setResult(null);
     try {
       const body: Record<string, string | number> = { ...form };
-      ["tenure", "MonthlyCharges", "TotalCharges", "SeniorCitizen"].forEach(
-        (k) => {
-          body[k] = parseFloat(form[k as keyof typeof form]) || 0;
-        },
-      );
+      // Convert SeniorCitizen Yes/No → 1/0
+      body.SeniorCitizen = form.SeniorCitizen === "Yes" ? 1 : 0;
+      ["tenure", "MonthlyCharges", "TotalCharges"].forEach((k) => {
+        body[k] = parseFloat(form[k]) || 0;
+      });
       const res = await fetch(`${API}/predict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1545,148 +1629,296 @@ function PredictTab() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not reach /predict");
     } finally {
-      setLoading(false);
+      setLoad(false);
     }
   };
 
   const maxShap = result
     ? Math.max(...result.shap_reasons.map((r) => Math.abs(r.shap_impact)))
     : 1;
+  const prob = result ? Math.round(result.churn_probability * 100) : 0;
+  const color = result ? rc(result.risk_level) : "#555";
 
   return (
-    <div className="db-pred-grid">
-      <div className="db-panel">
-        <div className="db-ph">
-          <span className="db-pt">Customer details</span>
-          <span className="db-ps">POST → /predict</span>
-        </div>
-        <div className="db-field-grid">
-          {FIELDS.map((f) => (
-            <div className="db-field" key={f.key}>
-              <span className="db-field-lbl">{f.label}</span>
-              {f.options ? (
-                <select
-                  className="db-field-inp"
-                  value={form[f.key as keyof typeof form]}
-                  onChange={(e) => setF(f.key, e.target.value)}
-                >
-                  {f.options.map((o) => (
-                    <option key={o}>{o}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  className="db-field-inp"
-                  type={f.type ?? "text"}
-                  value={form[f.key as keyof typeof form]}
-                  onChange={(e) => setF(f.key, e.target.value)}
-                />
-              )}
-            </div>
-          ))}
-        </div>
-        <button className="db-pred-btn" onClick={run} disabled={loading}>
-          {loading ? "Scoring…" : "Run prediction →"}
-        </button>
-      </div>
-      <div className="db-panel">
-        <div className="db-ph">
-          <span className="db-pt">Prediction result</span>
-          <span className="db-ps">
-            {result
-              ? `scored · ${result.customer_id}`
-              : loading
-                ? "scoring…"
-                : "waiting for input…"}
-          </span>
-        </div>
-        {!result && !error && !loading && (
-          <div className="db-empty">
-            Fill in customer details and
-            <br />
-            click Run prediction to see results.
+    <div className="pred-root">
+      <div className="pred-grid">
+        {/* ── Form ── */}
+        <div className="pred-form">
+          <div className="pred-form-hdr">
+            <span className="pred-form-hdr-title">Customer details</span>
+            <span className="pred-form-hdr-sub">POST → /predict</span>
           </div>
-        )}
-        {loading && (
-          <div style={{ padding: "1.5rem" }}>
-            <div className="db-skel" style={{ width: 120, marginBottom: 10 }} />
-            <div className="db-skel" style={{ width: 80 }} />
-          </div>
-        )}
-        {error && (
-          <div
-            style={{
-              padding: "1rem",
-              fontFamily: "monospace",
-              fontSize: 11,
-              color: "#ff3b3b",
-              wordBreak: "break-all",
-            }}
-          >
-            {error}
-          </div>
-        )}
-        {result && !loading && (
-          <div className="db-result-box">
-            <div className="db-result-top">
-              <div
-                className="db-result-prob"
-                style={{ color: rc(result.risk_level) }}
-              >
-                {Math.round(result.churn_probability * 100)}%
-              </div>
-              <div>
-                <div className="db-result-lbl">Churn probability</div>
-                <div className="db-result-sub">
-                  Risk:{" "}
-                  <span
-                    style={{ color: rc(result.risk_level), fontWeight: 700 }}
-                  >
-                    {result.risk_level.toUpperCase()}
-                  </span>
-                </div>
-                <RiskBadge
-                  level={result.risk_level}
-                  prob={result.churn_probability}
-                />
-              </div>
-            </div>
-            <div className="db-shap-title">SHAP breakdown</div>
-            {result.shap_reasons.map((r) => (
-              <div className="db-result-shap-row" key={r.feature}>
-                <span className="db-result-shap-lbl">{r.feature}</span>
-                <div className="db-result-shap-bg">
+
+          <div className="pred-body">
+            {FORM_SECTIONS.map((section) => (
+              <div className="pred-section" key={section.title}>
+                <div className="pred-section-title">{section.title}</div>
+                {section.rows.map((row, ri) => (
                   <div
-                    style={{
-                      height: 5,
-                      borderRadius: 4,
-                      width: `${Math.min((Math.abs(r.shap_impact) / maxShap) * 100, 100)}%`,
-                      background:
-                        r.direction === "increases risk"
-                          ? "#ff3b3b"
-                          : "#30d158",
-                      transition: "width .7s cubic-bezier(.22,1,.36,1)",
-                    }}
-                  />
-                </div>
-                <span
-                  className="db-result-shap-dir"
-                  style={{
-                    color:
-                      r.direction === "increases risk" ? "#ff3b3b" : "#30d158",
-                  }}
-                >
-                  {r.direction === "increases risk"
-                    ? "↑ increases"
-                    : "↓ decreases"}
-                </span>
+                    className={`pred-row${row.length === 3 ? " three" : row.length === 1 ? " full" : ""}`}
+                    key={ri}
+                  >
+                    {row.map((f: any) => (
+                      <div className="pred-field" key={f.key}>
+                        <span className="pred-label">{f.label}</span>
+                        {f.options ? (
+                          <select
+                            className="pred-input"
+                            value={form[f.key]}
+                            onChange={(e) => setF(f.key, e.target.value)}
+                          >
+                            {f.options.map((o: string) => (
+                              <option key={o} value={o}>
+                                {o}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            className="pred-input"
+                            type={f.type ?? "text"}
+                            value={form[f.key]}
+                            onChange={(e) => setF(f.key, e.target.value)}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ))}
               </div>
             ))}
-            {result.recommendation && (
-              <div className="db-result-rec">→ {result.recommendation}</div>
-            )}
           </div>
-        )}
+
+          <div className="pred-submit-area">
+            <button className="pred-btn" onClick={run} disabled={loading}>
+              {loading ? (
+                <>
+                  <div className="pred-btn-spinner" />
+                  Scoring…
+                </>
+              ) : (
+                <>Run prediction →</>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* ── Result ── */}
+        <div className="pred-result">
+          <div className="pred-result-hdr">
+            <span style={{ fontSize: 12, fontWeight: 700 }}>
+              Prediction result
+            </span>
+            <span
+              style={{ fontFamily: "monospace", fontSize: 10, color: "#555" }}
+            >
+              {result
+                ? `scored · ${result.customer_id}`
+                : loading
+                  ? "scoring…"
+                  : "waiting for input…"}
+            </span>
+          </div>
+
+          {!result && !error && !loading && (
+            <div className="pred-placeholder">
+              <div className="pred-placeholder-icon">⚡</div>
+              <div className="pred-placeholder-text">
+                Fill in the customer details
+                <br />
+                and click{" "}
+                <strong style={{ color: "#f0f0f0" }}>Run prediction</strong>
+                <br />
+                to get their churn score.
+              </div>
+            </div>
+          )}
+
+          {loading && (
+            <div className="pred-placeholder">
+              <div
+                className="pred-btn-spinner"
+                style={{ width: 24, height: 24, borderWidth: 3 }}
+              />
+              <div
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 11,
+                  color: "#555",
+                  marginTop: 8,
+                }}
+              >
+                Running model…
+              </div>
+            </div>
+          )}
+
+          {error && !loading && (
+            <div style={{ padding: "1rem" }}>
+              <div className="pred-error">{error}</div>
+            </div>
+          )}
+
+          {result && !loading && (
+            <div className="pred-result-body">
+              {/* Score gauge */}
+              <div className="pred-score-wrap">
+                <div className="pred-score-num" style={{ color }}>
+                  {prob}%
+                </div>
+                <div className="pred-score-right">
+                  <div className="pred-score-lbl">Churn probability</div>
+                  <div className="pred-score-risk" style={{ marginBottom: 6 }}>
+                    Risk level:{" "}
+                    <span
+                      style={{
+                        color,
+                        fontWeight: 700,
+                        fontFamily: "monospace",
+                      }}
+                    >
+                      {result.risk_level.toUpperCase()}
+                    </span>
+                    &nbsp;&nbsp;
+                    <RiskBadge
+                      level={result.risk_level}
+                      prob={result.churn_probability}
+                    />
+                  </div>
+                  <div className="pred-prob-bar">
+                    <div
+                      className="pred-prob-fill"
+                      style={{
+                        width: `${prob}%`,
+                        background: `linear-gradient(90deg,${color}70,${color})`,
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick stats */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr 1fr",
+                  gap: 7,
+                }}
+              >
+                {[
+                  { label: "Contract", value: result.contract },
+                  { label: "Tenure", value: `${Math.round(result.tenure)}mo` },
+                  {
+                    label: "Monthly £",
+                    value: `£${result.monthly_charges?.toFixed(2)}`,
+                  },
+                ].map((s) => (
+                  <div
+                    key={s.label}
+                    style={{
+                      background: "#0a0a0f",
+                      border: "1px solid #1e1e2e",
+                      borderRadius: 7,
+                      padding: "7px 10px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontFamily: "monospace",
+                        fontSize: 8,
+                        color: "#444",
+                        textTransform: "uppercase",
+                        letterSpacing: ".1em",
+                        marginBottom: 3,
+                      }}
+                    >
+                      {s.label}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: "monospace",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: "#f0f0f0",
+                      }}
+                    >
+                      {s.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* SHAP */}
+              <div>
+                <div
+                  style={{
+                    fontFamily: "monospace",
+                    fontSize: 9,
+                    color: "#444",
+                    textTransform: "uppercase",
+                    letterSpacing: ".1em",
+                    marginBottom: 8,
+                  }}
+                >
+                  Why this score — SHAP breakdown
+                </div>
+                {result.shap_reasons.map((r) => (
+                  <div className="pred-shap-row" key={r.feature}>
+                    <span className="pred-shap-lbl">{r.feature}</span>
+                    <div className="pred-shap-bg">
+                      <div
+                        style={{
+                          height: 5,
+                          borderRadius: 4,
+                          width: `${Math.min((Math.abs(r.shap_impact) / maxShap) * 100, 100)}%`,
+                          background:
+                            r.direction === "increases risk"
+                              ? "#ff3b3b"
+                              : "#30d158",
+                          transition: "width .7s cubic-bezier(.22,1,.36,1)",
+                        }}
+                      />
+                    </div>
+                    <span
+                      className="pred-shap-dir"
+                      style={{
+                        color:
+                          r.direction === "increases risk"
+                            ? "#ff3b3b"
+                            : "#30d158",
+                      }}
+                    >
+                      {r.direction === "increases risk"
+                        ? "↑ increases"
+                        : "↓ decreases"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Recommendation */}
+              {result.recommendation && (
+                <div className="pred-rec-box">
+                  <span style={{ fontSize: 16, flexShrink: 0 }}>⚡</span>
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "#7ad4ff",
+                        marginBottom: 4,
+                        fontFamily: "monospace",
+                      }}
+                    >
+                      {deriveAction(result)}
+                    </div>
+                    <div>{result.recommendation}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1696,22 +1928,20 @@ function PredictTab() {
 // ROOT
 // ════════════════════════════════════════════════════════════════════════════
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>(0);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
   const [features, setFeatures] = useState<Feature[]>([]);
   const [feed, setFeed] = useState<Customer[]>([]);
   const [priority, setPriority] = useState<Customer[]>([]);
+  const [allStreamCustomers, setAll] = useState<Customer[]>([]);
   const [newestId, setNewestId] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
   const [streamStatus, setStreamStatus] = useState<
     "connecting" | "live" | "error"
   >("connecting");
-
-  // ALL customers ever scored by stream — feeds BOTH priority queue AND Tab 1 search
   const seen = useRef<Map<string, Customer>>(new Map());
-  // Separate sorted list for Tab 1 (all customers, not filtered)
-  const [allStreamCustomers, setAllStreamCustomers] = useState<Customer[]>([]);
 
   useEffect(() => {
     const stamp = () => setLastUpdated(new Date().toLocaleTimeString());
@@ -1730,7 +1960,6 @@ export default function Dashboard() {
       .then((r) => r.json())
       .then((d) => setFeatures(d.features ?? []))
       .catch(console.error);
-    // Also seed Tab 1 with /customers so it's not empty before stream fills
     fetch(`${API}/customers?limit=100`)
       .then((r) => r.json())
       .then((d) => {
@@ -1739,11 +1968,10 @@ export default function Dashboard() {
           if (!seen.current.has(c.customer_id))
             seen.current.set(c.customer_id, c);
         });
-        setAllStreamCustomers(
-          [...seen.current.values()].sort(
-            (a, b) => b.churn_probability - a.churn_probability,
-          ),
+        const sorted = [...seen.current.values()].sort(
+          (a, b) => b.churn_probability - a.churn_probability,
         );
+        setAll(sorted);
       })
       .catch(console.error);
   }, []);
@@ -1758,24 +1986,14 @@ export default function Dashboard() {
         if (!c || (c as any).error) return;
         setNewestId(c.customer_id);
         setLastUpdated(new Date().toLocaleTimeString());
-
-        // Update live feed (last 8)
-        setFeed((prev) => [c, ...prev].slice(0, 8));
-
-        // Update the seen map — used by BOTH priority queue and Tab 1
+        setFeed((prev) => [c, ...prev].slice(0, 10));
         seen.current.set(c.customer_id, c);
         const sorted = [...seen.current.values()].sort(
           (a, b) => b.churn_probability - a.churn_probability,
         );
-
-        // Priority queue (all risk levels in state, OverviewTab filters)
         setPriority(sorted);
-
-        // Tab 1 customer table (all scored customers)
-        setAllStreamCustomers(sorted);
-      } catch {
-        /* ignore */
-      }
+        setAll(sorted);
+      } catch {}
     };
     return () => es.close();
   }, []);
@@ -1800,13 +2018,18 @@ export default function Dashboard() {
     <>
       <style>{STYLES}</style>
       <div className="db">
+        {/* Header */}
         <div className="db-hdr">
           <div className="db-hdr-l">
+            {/* Back button → returns to landing page */}
+            <button className="db-back" onClick={() => navigate("/")}>
+              ← Back
+            </button>
             <div className="db-dot" />
             <span className="db-title">ChurnRadar</span>
             <span className="db-badge">Dashboard</span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <span className="db-sbadge" style={sbStyle}>
               {streamStatus === "live"
                 ? "● stream live"
@@ -1820,6 +2043,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Tabs */}
         <div className="db-tabs">
           {(["Overview", "Customer search", "Predict customer"] as const).map(
             (label, i) => (
@@ -1829,18 +2053,17 @@ export default function Dashboard() {
                 onClick={() => setTab(i as Tab)}
               >
                 {label}
-                {/* Show live count badge on tab 1 */}
                 {i === 1 && allStreamCustomers.length > 0 && (
                   <span
                     style={{
-                      marginLeft: 6,
+                      marginLeft: 5,
                       fontFamily: "monospace",
-                      fontSize: 9,
+                      fontSize: 8,
                       background: "#30d15820",
                       color: "#30d158",
                       border: "1px solid #30d15830",
                       borderRadius: 999,
-                      padding: "0 5px",
+                      padding: "0 4px",
                     }}
                   >
                     {allStreamCustomers.length}

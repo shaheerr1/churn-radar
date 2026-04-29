@@ -1,37 +1,56 @@
+import { useEffect, useState } from "react";
+
 export default function CTA() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkScreen = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    checkScreen();
+    window.addEventListener("resize", checkScreen);
+
+    return () => window.removeEventListener("resize", checkScreen);
+  }, []);
+
   return (
     <section
       style={{
-        minHeight: "100vh",
+        minHeight: isMobile ? "auto" : "100vh",
         display: "flex",
         flexDirection: "column",
-        justifyContent: "center",
-        padding: "6rem 4rem",
+        justifyContent: isMobile ? "flex-start" : "center",
+        padding: isMobile ? "2rem 1rem 3rem" : "6rem 4rem",
         position: "relative",
         overflow: "hidden",
+        boxSizing: "border-box",
+        width: "100%",
       }}
     >
       <div
         style={{
           position: "absolute",
-          top: "20%",
+          top: isMobile ? "6%" : "20%",
           left: "50%",
           transform: "translateX(-50%)",
-          width: 800,
-          height: 800,
+          width: isMobile ? 360 : 800,
+          height: isMobile ? 360 : 800,
           background:
             "radial-gradient(circle, rgba(255,59,59,0.06) 0%, transparent 65%)",
           zIndex: 0,
+          pointerEvents: "none",
         }}
       />
 
       <div
         style={{
-          maxWidth: 1200,
+          maxWidth: isMobile ? 430 : 1200,
           margin: "0 auto",
           width: "100%",
           position: "relative",
           zIndex: 1,
+          boxSizing: "border-box",
         }}
       >
         {/* main CTA block */}
@@ -39,34 +58,42 @@ export default function CTA() {
           style={{
             background: "var(--bg-card)",
             border: "1px solid var(--bg-border)",
-            borderRadius: 20,
+            borderRadius: isMobile ? 18 : 20,
             overflow: "hidden",
-            marginBottom: 12,
+            marginBottom: isMobile ? 12 : 12,
+            width: "100%",
+            boxSizing: "border-box",
           }}
         >
           {/* top bar */}
           <div
             style={{
               background: "var(--red)",
-              padding: "0.5rem 1.5rem",
+              padding: isMobile ? "0.7rem 1.25rem" : "0.5rem 1.5rem",
               display: "flex",
               alignItems: "center",
               gap: 8,
+              boxSizing: "border-box",
             }}
           >
             <div
               style={{
-                width: 6,
-                height: 6,
+                width: 7,
+                height: 7,
                 borderRadius: "50%",
                 background: "rgba(255,255,255,0.5)",
+                flexShrink: 0,
               }}
             />
+
             <span
               style={{
                 fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "rgba(255,255,255,0.8)",
+                fontSize: isMobile ? 11 : 11,
+                color: "rgba(255,255,255,0.82)",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
               churn_radar — live dashboard
@@ -75,22 +102,35 @@ export default function CTA() {
 
           <div
             style={{
-              padding: "2.5rem 3rem",
+              padding: isMobile ? "2.25rem 1.25rem 2rem" : "2.5rem 3rem",
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "3rem",
+              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+              gap: isMobile ? "2rem" : "3rem",
               alignItems: "center",
+              boxSizing: "border-box",
+              width: "100%",
             }}
           >
             {/* left */}
-            <div>
+            <div
+              style={{
+                width: "100%",
+                maxWidth: "100%",
+                overflow: "hidden",
+              }}
+            >
               <h2
                 style={{
-                  fontSize: "clamp(1.6rem, 2.5vw, 2.6rem)",
+                  fontSize: isMobile
+                    ? "clamp(2.25rem, 9.2vw, 3rem)"
+                    : "clamp(1.6rem, 2.5vw, 2.6rem)",
                   fontWeight: 800,
-                  letterSpacing: "-0.03em",
-                  lineHeight: 1.15,
-                  marginBottom: "1rem",
+                  letterSpacing: isMobile ? "-0.055em" : "-0.03em",
+                  lineHeight: isMobile ? 1.02 : 1.15,
+                  margin: "0 0 1.25rem",
+                  maxWidth: "100%",
+                  overflowWrap: "break-word",
+                  wordBreak: "normal",
                 }}
               >
                 Every week you wait,{" "}
@@ -102,11 +142,12 @@ export default function CTA() {
 
               <p
                 style={{
-                  fontSize: 14,
+                  fontSize: isMobile ? 14.5 : 14,
                   color: "var(--text-secondary)",
-                  lineHeight: 1.7,
-                  marginBottom: "1.5rem",
-                  maxWidth: 420,
+                  lineHeight: 1.75,
+                  margin: "0 0 1.6rem",
+                  maxWidth: isMobile ? "100%" : 420,
+                  overflowWrap: "break-word",
                 }}
               >
                 ChurnRadar is built and validated on real data. The model is
@@ -118,8 +159,9 @@ export default function CTA() {
                 style={{
                   display: "flex",
                   flexDirection: "column",
-                  gap: 10,
+                  gap: isMobile ? 12 : 10,
                   marginBottom: "1.75rem",
+                  width: "100%",
                 }}
               >
                 {[
@@ -132,31 +174,36 @@ export default function CTA() {
                     key={item}
                     style={{
                       display: "flex",
-                      alignItems: "center",
-                      gap: 10,
+                      alignItems: "flex-start",
+                      gap: 11,
+                      width: "100%",
                     }}
                   >
                     <div
                       style={{
-                        width: 16,
-                        height: 16,
+                        width: 18,
+                        height: 18,
                         borderRadius: "50%",
                         background: "var(--red-dim)",
                         border: "1px solid #ff3b3b44",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        fontSize: 9,
+                        fontSize: 10,
                         color: "var(--red)",
                         flexShrink: 0,
+                        marginTop: 2,
                       }}
                     >
                       ✓
                     </div>
+
                     <span
                       style={{
-                        fontSize: 13,
+                        fontSize: isMobile ? 14 : 13,
                         color: "var(--text-secondary)",
+                        lineHeight: 1.5,
+                        overflowWrap: "break-word",
                       }}
                     >
                       {item}
@@ -165,10 +212,18 @@ export default function CTA() {
                 ))}
               </div>
 
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: isMobile ? "column" : "row",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  width: "100%",
+                }}
+              >
                 <button
                   style={{
-                    padding: "12px 28px",
+                    padding: isMobile ? "14px 20px" : "12px 28px",
                     background: "var(--red)",
                     border: "none",
                     borderRadius: 10,
@@ -178,6 +233,8 @@ export default function CTA() {
                     cursor: "pointer",
                     fontFamily: "var(--font-display)",
                     transition: "transform 0.2s, opacity 0.2s",
+                    width: isMobile ? "100%" : "auto",
+                    boxSizing: "border-box",
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = "translateY(-2px)";
@@ -193,7 +250,7 @@ export default function CTA() {
 
                 <button
                   style={{
-                    padding: "12px 28px",
+                    padding: isMobile ? "14px 20px" : "12px 28px",
                     background: "transparent",
                     border: "1px solid var(--bg-border)",
                     borderRadius: 10,
@@ -203,6 +260,8 @@ export default function CTA() {
                     cursor: "pointer",
                     fontFamily: "var(--font-display)",
                     transition: "border-color 0.2s, color 0.2s",
+                    width: isMobile ? "100%" : "auto",
+                    boxSizing: "border-box",
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.borderColor = "#ff3b3b44";
@@ -226,15 +285,19 @@ export default function CTA() {
                 borderRadius: 14,
                 overflow: "hidden",
                 fontFamily: "var(--font-mono)",
+                width: "100%",
+                maxWidth: "100%",
+                boxSizing: "border-box",
               }}
             >
               <div
                 style={{
-                  padding: "0.6rem 1rem",
+                  padding: isMobile ? "0.75rem 1rem" : "0.6rem 1rem",
                   borderBottom: "1px solid var(--bg-border)",
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
+                  boxSizing: "border-box",
                 }}
               >
                 {["#ff5f56", "#ffbd2e", "#27c93f"].map((c) => (
@@ -245,14 +308,19 @@ export default function CTA() {
                       height: 9,
                       borderRadius: "50%",
                       background: c,
+                      flexShrink: 0,
                     }}
                   />
                 ))}
+
                 <span
                   style={{
                     fontSize: 11,
                     color: "var(--text-muted)",
                     marginLeft: 6,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
                   }}
                 >
                   model_summary.json
@@ -261,9 +329,12 @@ export default function CTA() {
 
               <div
                 style={{
-                  padding: "1.25rem 1.5rem",
-                  fontSize: 12,
-                  lineHeight: 1.9,
+                  padding: isMobile ? "1.1rem 1rem 1.2rem" : "1.25rem 1.5rem",
+                  fontSize: isMobile ? 11 : 12,
+                  lineHeight: isMobile ? 1.85 : 1.9,
+                  overflowX: "auto",
+                  maxWidth: "100%",
+                  boxSizing: "border-box",
                 }}
               >
                 {[
@@ -294,7 +365,15 @@ export default function CTA() {
                     color: "#30d158",
                   },
                 ].map((row) => (
-                  <div key={row.key} style={{ display: "flex", gap: 6 }}>
+                  <div
+                    key={row.key}
+                    style={{
+                      display: "flex",
+                      gap: 6,
+                      minWidth: isMobile ? 260 : "max-content",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
                     <span style={{ color: "var(--text-muted)" }}>"</span>
                     <span style={{ color: "var(--text-secondary)" }}>
                       {row.key}
@@ -312,14 +391,16 @@ export default function CTA() {
         <div
           style={{
             display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "1.25rem 2rem",
+            alignItems: isMobile ? "flex-start" : "center",
+            justifyContent: isMobile ? "flex-start" : "space-between",
+            padding: isMobile ? "1.2rem" : "1.25rem 2rem",
             background: "var(--bg-card)",
             border: "1px solid var(--bg-border)",
             borderRadius: 14,
             flexWrap: "wrap",
-            gap: "1rem",
+            gap: isMobile ? "1rem" : "1rem",
+            width: "100%",
+            boxSizing: "border-box",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -336,10 +417,12 @@ export default function CTA() {
                 fontWeight: 700,
                 fontSize: 12,
                 color: "#fff",
+                flexShrink: 0,
               }}
             >
               C
             </div>
+
             <span style={{ fontWeight: 700, fontSize: 15 }}>
               Churn<span style={{ color: "var(--red)" }}>Radar</span>
             </span>
@@ -348,10 +431,13 @@ export default function CTA() {
           <div
             style={{
               display: "flex",
-              gap: "2rem",
+              flexDirection: isMobile ? "column" : "row",
+              gap: isMobile ? "0.5rem" : "2rem",
               fontFamily: "var(--font-mono)",
               fontSize: 11,
               color: "var(--text-muted)",
+              width: isMobile ? "100%" : "auto",
+              lineHeight: 1.5,
             }}
           >
             {[
