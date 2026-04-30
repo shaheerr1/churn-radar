@@ -5,7 +5,7 @@ import shap
 import os
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-MODELS = os.path.join(BASE, '../../models')
+MODELS = BASE
 
 model = joblib.load(os.path.join(MODELS, 'churn_model.pkl'))
 feature_cols = joblib.load(os.path.join(MODELS, 'feature_columns.pkl'))
