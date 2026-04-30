@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 const NAV_STYLES = `
   .nav-links a { text-decoration: none }
 
-  /* ── Mobile menu ── */
   .nav-mobile-menu {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -31,7 +31,6 @@ const NAV_STYLES = `
   }
   .nav-mobile-menu a:hover { color: var(--text-primary) }
 
-  /* ── Hamburger icon ── */
   .nav-burger {
     display: none;
     flex-direction: column;
@@ -49,22 +48,24 @@ const NAV_STYLES = `
     background: var(--text-secondary);
     transition: all .25s ease;
   }
-  /* X state */
   .nav-burger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg) }
   .nav-burger.open span:nth-child(2) { opacity: 0 }
   .nav-burger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg) }
 
-  /* ── Hide links on mobile, show burger ── */
   @media (max-width: 640px) {
-    .nav-links   { display: none !important }
-    .nav-cta-desktop { display: none !important }
-    .nav-burger  { display: flex }
+    .nav-links        { display: none !important }
+    .nav-cta-desktop  { display: none !important }
+    .nav-burger       { display: flex }
   }
 `;
+
+const EMAIL =
+  "mailto:shaheer.aslam@icloud.com?subject=ChurnRadar%20Demo%20Request&body=Hi%20Shaheer%2C%20I%27d%20like%20to%20book%20a%20demo%20of%20ChurnRadar.";
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -72,7 +73,6 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Prevent body scroll when menu is open
   useEffect(() => {
     document.body.style.overflow = menuOpen ? "hidden" : "";
     return () => {
@@ -81,6 +81,31 @@ export default function Navbar() {
   }, [menuOpen]);
 
   const close = () => setMenuOpen(false);
+
+  const scrollToHowItWorks = () => {
+    const el = document.getElementById("how-it-works");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    close();
+  };
+
+  const scrollToResults = () => {
+    const el = document.getElementById("proven-results");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    close();
+  };
+
+  const openEmail = () => {
+    window.location.href = EMAIL;
+    close();
+  };
+
+  // Each nav item: label + what it does
+  const NAV_ITEMS = [
+    { label: "How it works", action: scrollToHowItWorks },
+    { label: "Results", action: scrollToResults },
+  ];
 
   return (
     <>
@@ -144,13 +169,18 @@ export default function Navbar() {
           className="nav-links"
           style={{ display: "flex", alignItems: "center", gap: "2rem" }}
         >
-          {["How it works", "Results", "Pricing"].map((item) => (
-            <a
-              key={item}
-              href="#"
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.label}
+              onClick={item.action}
               style={{
+                background: "none",
+                border: "none",
+                padding: 0,
                 fontSize: 14,
                 color: "var(--text-secondary)",
+                cursor: "pointer",
+                fontFamily: "inherit",
                 transition: "color 0.2s",
               }}
               onMouseEnter={(e) =>
@@ -160,14 +190,15 @@ export default function Navbar() {
                 (e.currentTarget.style.color = "var(--text-secondary)")
               }
             >
-              {item}
-            </a>
+              {item.label}
+            </button>
           ))}
         </div>
 
-        {/* Desktop CTA */}
+        {/* Desktop CTA — opens email */}
         <button
           className="nav-cta-desktop"
+          onClick={openEmail}
           style={{
             padding: "8px 20px",
             background: "var(--red)",
@@ -186,7 +217,7 @@ export default function Navbar() {
           Book a demo
         </button>
 
-        {/* Hamburger (mobile only) */}
+        {/* Hamburger */}
         <button
           className={`nav-burger${menuOpen ? " open" : ""}`}
           onClick={() => setMenuOpen((o) => !o)}
@@ -202,16 +233,20 @@ export default function Navbar() {
       {/* Mobile fullscreen menu */}
       {menuOpen && (
         <div className="nav-mobile-menu">
-          {["How it works", "Results", "Pricing"].map((item) => (
-            <a key={item} href="#" onClick={close}>
-              {item}
+          {NAV_ITEMS.map((item) => (
+            <a
+              key={item.label}
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                item.action();
+              }}
+            >
+              {item.label}
             </a>
           ))}
           <button
-            onClick={() =>
-              (window.location.href =
-                "mailto:shaheer.aslam@icloud.com?subject=ChurnRadar%20Access%20Request&body=Hi%20Shaheer%2C%20I%27d%20like%20to%20request%20access%20to%20ChurnRadar.")
-            }
+            onClick={openEmail}
             style={{
               marginTop: "0.5rem",
               padding: "12px 36px",

@@ -255,7 +255,7 @@ export default function HowItWorks() {
   return (
     <>
       <style>{styles}</style>
-      <section className="hiw-section">
+      <section id = "how-it-works" className="hiw-section">
         {/* cyan glow */}
         <div
           style={{

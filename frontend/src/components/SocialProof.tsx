@@ -118,7 +118,7 @@ export default function SocialProof() {
   return (
     <>
       <style>{styles}</style>
-      <section className="sp-section">
+      <section id="proven-results" className="sp-section">
         <div
           style={{
             position: "absolute",
