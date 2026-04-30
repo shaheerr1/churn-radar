@@ -1,11 +1,9 @@
 /**
  * Dashboard.tsx — ChurnRadar
- * Changes:
- *  - Back button in nav → navigates to "/"
- *  - Priority queue "Action" col shows smart action derived from recommendation/risk
- *  - Modal prominently shows recommendation
- *  - Tab 2 (Customer search) mobile responsive
- *  - Tab 3 (Predict) completely redesigned — grouped sections, clean result panel
+ * Changes in this version:
+ *  - Tab 1 "Customer search": recommendation column never blank (uses deriveAction fallback)
+ *  - Tab 1: mobile-responsive — hides non-essential columns on small screens,
+ *    horizontal scroll preserved, sticky header maintained
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -88,7 +86,6 @@ const TT = {
   labelStyle: { color: "#888", marginBottom: 4 },
 };
 
-// Derive a short action label from recommendation text or risk level
 function deriveAction(customer: Customer): string {
   const rec = customer.recommendation?.toLowerCase() ?? "";
   if (rec.includes("call")) return "📞 Call today";
@@ -99,9 +96,9 @@ function deriveAction(customer: Customer): string {
   if (rec.includes("bundle") || rec.includes("upsell"))
     return "📦 Upsell bundle";
   if (rec.includes("monitor")) return "👀 Monitor";
-  // fallback by risk
   if (customer.risk_level === "critical") return "📞 Call today";
   if (customer.risk_level === "high") return "✉ Reach out";
+  if (customer.risk_level === "medium") return "💬 Check in";
   return "👀 Monitor";
 }
 
@@ -115,7 +112,7 @@ const STYLES = `
   @keyframes shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
   @keyframes modalIn { from{opacity:0;transform:scale(.97) translateY(6px)} to{opacity:1;transform:scale(1) translateY(0)} }
   @keyframes rowSlide{ from{opacity:0;transform:translateX(-5px)} to{opacity:1;transform:translateX(0)} }
-  @keyframes slideUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes spin    { to{transform:rotate(360deg)} }
 
   *, *::before, *::after { box-sizing:border-box }
   html,body{ margin:0;padding:0 }
@@ -197,7 +194,6 @@ const STYLES = `
   .pq-tbl tr:last-child td{ border-bottom:none }
   .pq-tbl tbody tr{ cursor:pointer;transition:background .1s }
   .pq-tbl tbody tr:hover td{ background:rgba(255,255,255,.035) }
-  /* Action badge in PQ */
   .pq-action{ font-family:monospace;font-size:clamp(8px,.7vw,9px);white-space:nowrap;padding:2px 6px;border-radius:4px;background:#1a1a2e;color:#888;border:1px solid #252535 }
   .pq-action.urgent{ background:#ff3b3b12;color:#ff6b6b;border-color:#ff3b3b22 }
   .pq-action.reach { background:#ff95000d;color:#ffaa30;border-color:#ff95001a }
@@ -219,14 +215,15 @@ const STYLES = `
   .modal-stat{ background:#0a0a0f;border:1px solid #1a1a2e;border-radius:7px;padding:7px 10px }
   .modal-stat-lbl{ font-family:monospace;font-size:8px;color:#444;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px }
   .modal-stat-val{ font-family:monospace;font-size:12px;font-weight:600;color:#f0f0f0 }
-  /* Big recommendation box in modal */
   .modal-rec{ background:rgba(0,170,255,.05);border:1px solid rgba(0,170,255,.2);border-radius:9px;padding:.85rem 1rem;font-family:monospace;font-size:12px;color:#0af;line-height:1.7;display:flex;align-items:flex-start;gap:10px }
   .modal-rec-icon{ font-size:18px;flex-shrink:0;margin-top:-1px }
 
   /* ─ Empty */
   .db-empty{ padding:1.5rem;text-align:center;font-family:monospace;font-size:10px;color:#555 }
 
-  /* ════ Customer search (Tab 1) ════ */
+  /* ════════════════════════════════════════════════════
+     CUSTOMER SEARCH (Tab 1) — full styles incl. mobile
+  ════════════════════════════════════════════════════ */
   .cs-root  { display:flex;flex-direction:column;flex:1;min-height:0;background:#111;border:1px solid #1e1e2e;border-radius:10px;overflow:hidden }
   .cs-header{ display:flex;align-items:center;gap:7px;padding:.55rem .85rem;border-bottom:1px solid #1a1a2e;background:#0d0d15;flex-shrink:0;flex-wrap:wrap }
   .cs-search{ background:#111;border:1px solid #252535;border-radius:7px;padding:6px 10px 6px 27px;color:#f0f0f0;font-family:monospace;font-size:11px;outline:none;flex:1;min-width:140px;transition:border-color .2s;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23444' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:9px center }
@@ -236,8 +233,11 @@ const STYLES = `
   .cs-filter:focus{ border-color:#3a3a5a }
   .cs-live-pill{ display:flex;align-items:center;gap:4px;font-family:monospace;font-size:9px;color:#30d158;background:#30d15812;border:1px solid #30d15828;border-radius:999px;padding:2px 7px;flex-shrink:0 }
   .cs-count{ font-family:monospace;font-size:10px;color:#444;margin-left:auto;flex-shrink:0 }
-  .cs-tbl-wrap{ flex:1;overflow-y:auto;overflow-x:auto;min-height:0 }
-  .cs-tbl  { width:100%;border-collapse:collapse }
+
+  /* Table wrapper — always horizontally scrollable so content is never clipped */
+  .cs-tbl-wrap{ flex:1;overflow-y:auto;overflow-x:auto;min-height:0;-webkit-overflow-scrolling:touch }
+
+  .cs-tbl  { width:100%;border-collapse:collapse;min-width:560px }/* min-width prevents squishing */
   .cs-tbl thead{ position:sticky;top:0;z-index:1 }
   .cs-tbl th{ background:#0a0a12;font-family:monospace;font-size:9px;color:#3a3a5a;text-transform:uppercase;letter-spacing:.12em;font-weight:500;text-align:left;padding:.55rem .85rem;border-bottom:1px solid #1a1a2e;white-space:nowrap;user-select:none }
   .cs-tbl th.s{ cursor:pointer }
@@ -246,17 +246,64 @@ const STYLES = `
   .cs-tbl td{ padding:.52rem .85rem;border-bottom:1px solid #0f0f1a;vertical-align:middle;white-space:nowrap }
   .cs-tbl tr:last-child td{ border-bottom:none }
   .cs-tbl tbody tr:hover td{ background:rgba(255,255,255,.022) }
+
+  /* Cell types */
   .cs-id  { font-family:monospace;font-size:11px;font-weight:600;color:#e0e0e0;letter-spacing:.03em }
   .cs-mono{ font-family:monospace;font-size:11px;color:#666 }
   .cs-pill{ font-family:monospace;font-size:9px;padding:2px 6px;border-radius:3px;white-space:nowrap }
   .cs-m2m { background:#ff3b3b0a;color:#ff6b6b;border:1px solid #ff3b3b1a }
   .cs-one { background:#ff95000a;color:#ffaa30;border:1px solid #ff95001a }
   .cs-two { background:#30d1580a;color:#30d158;border:1px solid #30d1581a }
+
   .cs-shap{ display:flex;align-items:center;gap:5px }
   .cs-shap-feat{ font-family:monospace;font-size:9px;color:#666;min-width:80px }
   .cs-shap-track{ width:36px;height:3px;background:#1e1e2e;border-radius:3px;flex-shrink:0 }
   .cs-shap-num{ font-family:monospace;font-size:8px;color:#444 }
-  .cs-rec { font-family:monospace;font-size:9px;color:#0af;max-width:180px;overflow:hidden;text-overflow:ellipsis }
+
+  /* ── Recommendation / action cell — the key fix ── */
+  .cs-action-badge{
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: monospace;
+    font-size: 9px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+    background: #1a1a2e;
+    color: #888;
+    border: 1px solid #252535;
+  }
+  /* colour variants driven by risk */
+  .cs-action-badge.critical{ background:#ff3b3b10;color:#ff6b6b;border-color:#ff3b3b25 }
+  .cs-action-badge.high    { background:#ff950010;color:#ffaa30;border-color:#ff950025 }
+  .cs-action-badge.medium  { background:#0af00a10;color:#4dd;  border-color:#0af2 }
+  .cs-action-badge.low     { background:#30d15810;color:#30d158;border-color:#30d15825 }
+
+  /* tooltip-style full recommendation text on hover */
+  .cs-rec-wrap{ position:relative;cursor:default }
+  .cs-rec-tip{
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 50;
+    background: #0f0f1a;
+    border: 1px solid #2a2a3a;
+    border-radius: 7px;
+    padding: 7px 10px;
+    font-family: monospace;
+    font-size: 10px;
+    color: #0af;
+    line-height: 1.55;
+    min-width: 200px;
+    max-width: 280px;
+    white-space: normal;
+    box-shadow: 0 8px 24px rgba(0,0,0,.6);
+    pointer-events: none;
+  }
+  .cs-rec-wrap:hover .cs-rec-tip{ display:block }
+
   .cs-footer{ display:flex;align-items:center;justify-content:space-between;padding:.45rem .85rem;border-top:1px solid #1a1a2e;flex-shrink:0;background:#0d0d15 }
   .cs-footer span{ font-family:monospace;font-size:10px;color:#444 }
   .cs-pg{ background:#1a1a2e;border:1px solid #252535;border-radius:4px;color:#666;font-family:monospace;font-size:10px;padding:3px 8px;cursor:pointer;transition:all .15s }
@@ -264,18 +311,30 @@ const STYLES = `
   .cs-pg:disabled{ opacity:.22;cursor:not-allowed }
   .cs-pg-n{ font-family:monospace;font-size:10px;color:#555 }
 
-  /* ════ Predict tab — redesigned ════ */
+  /* ── Mobile overrides for customer search ──
+     On small screens, hide the less-critical columns.
+     The table still scrolls horizontally if needed.        */
+  @media(max-width:640px){
+    .cs-tbl{ min-width:0 }        /* allow table to shrink */
+    .cs-col-shap,
+    .cs-col-tenure{ display:none } /* hide Top SHAP + Tenure columns */
+    .cs-tbl th.cs-col-shap,
+    .cs-tbl th.cs-col-tenure{ display:none }
+    .cs-search{ font-size:13px }
+  }
+  @media(max-width:420px){
+    .cs-col-contract{ display:none }
+    .cs-tbl th.cs-col-contract{ display:none }
+  }
+
+  /* ════ Predict tab ════ */
   .pred-root{ display:flex;flex-direction:column;flex:1;min-height:0;gap:0;overflow:auto }
   .pred-grid{ display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:1;min-height:0 }
-
-  /* Form panel */
   .pred-form{ background:#111;border:1px solid #1e1e2e;border-radius:10px;overflow:hidden;display:flex;flex-direction:column }
   .pred-form-hdr{ padding:.6rem .9rem;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;flex-shrink:0 }
   .pred-form-hdr-title{ font-size:12px;font-weight:700 }
   .pred-form-hdr-sub{ font-family:monospace;font-size:10px;color:#555 }
   .pred-body{ flex:1;overflow-y:auto;padding:.6rem .9rem;display:flex;flex-direction:column;gap:.85rem }
-
-  /* Section groups inside form */
   .pred-section{ display:flex;flex-direction:column;gap:6px }
   .pred-section-title{ font-family:monospace;font-size:9px;color:#444;text-transform:uppercase;letter-spacing:.12em;margin-bottom:2px;display:flex;align-items:center;gap:6px }
   .pred-section-title::after{ content:'';flex:1;height:1px;background:#1a1a2e }
@@ -284,41 +343,17 @@ const STYLES = `
   .pred-row.full  { grid-template-columns:1fr }
   .pred-field{ display:flex;flex-direction:column;gap:3px }
   .pred-label{ font-size:10px;color:#555;font-family:monospace }
-  .pred-input{
-    background:#0a0a0f;
-    border:1px solid #1e1e2e;
-    border-radius:6px;
-    padding:6px 9px;
-    color:#f0f0f0;
-    font-family:monospace;
-    font-size:11px;
-    outline:none;
-    width:100%;
-    transition:border-color .2s,background .2s;
-    appearance:none;
-  }
+  .pred-input{ background:#0a0a0f;border:1px solid #1e1e2e;border-radius:6px;padding:6px 9px;color:#f0f0f0;font-family:monospace;font-size:11px;outline:none;width:100%;transition:border-color .2s,background .2s;appearance:none }
   .pred-input:focus{ border-color:#3a3a5a;background:#0f0f18 }
   .pred-input:hover{ border-color:#2a2a3a }
   .pred-submit-area{ padding:.65rem .9rem;border-top:1px solid #1e1e2e;flex-shrink:0 }
-  .pred-btn{
-    width:100%;padding:10px;
-    background:#ff3b3b;border:none;border-radius:7px;
-    color:#fff;font-size:12px;font-weight:700;cursor:pointer;
-    font-family:inherit;letter-spacing:-.01em;
-    transition:opacity .2s,transform .15s,box-shadow .2s;
-    display:flex;align-items:center;justify-content:center;gap:6px;
-  }
+  .pred-btn{ width:100%;padding:10px;background:#ff3b3b;border:none;border-radius:7px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:-.01em;transition:opacity .2s,transform .15s,box-shadow .2s;display:flex;align-items:center;justify-content:center;gap:6px }
   .pred-btn:hover:not(:disabled){ opacity:.88;transform:translateY(-1px);box-shadow:0 6px 20px rgba(255,59,59,.3) }
   .pred-btn:disabled{ opacity:.4;cursor:not-allowed;transform:none;box-shadow:none }
   .pred-btn-spinner{ width:13px;height:13px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite }
-  @keyframes spin{ to{transform:rotate(360deg)} }
-
-  /* Result panel */
   .pred-result{ background:#111;border:1px solid #1e1e2e;border-radius:10px;overflow:hidden;display:flex;flex-direction:column }
   .pred-result-hdr{ padding:.6rem .9rem;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;justify-content:space-between;flex-shrink:0 }
   .pred-result-body{ flex:1;overflow-y:auto;padding:.75rem .9rem;display:flex;flex-direction:column;gap:.85rem }
-
-  /* Score display */
   .pred-score-wrap{ display:flex;align-items:center;gap:1rem;padding:.85rem;background:#0a0a0f;border:1px solid #1e1e2e;border-radius:9px }
   .pred-score-num { font-family:monospace;font-size:2.8rem;font-weight:700;line-height:1;min-width:90px }
   .pred-score-right{ flex:1 }
@@ -326,8 +361,6 @@ const STYLES = `
   .pred-score-risk { font-size:10px;color:#888;margin-bottom:8px }
   .pred-prob-bar  { height:6px;background:#1e1e2e;border-radius:999px;overflow:hidden }
   .pred-prob-fill { height:6px;border-radius:999px;transition:width .7s cubic-bezier(.22,1,.36,1) }
-
-  /* SHAP mini chart */
   .pred-shap-row  { display:flex;align-items:center;gap:8px;margin-bottom:7px }
   .pred-shap-lbl  { font-family:monospace;font-size:10px;color:#ccc;width:120px;flex-shrink:0 }
   .pred-shap-bg   { flex:1;height:5px;background:#1e1e2e;border-radius:4px }
@@ -437,9 +470,6 @@ function MetricCard({
   );
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// MODAL — with prominent recommendation
-// ════════════════════════════════════════════════════════════════════════════
 function CustomerModal({
   customer,
   onClose,
@@ -453,7 +483,6 @@ function CustomerModal({
   const color = rc(customer.risk_level);
   const prob = Math.round(customer.churn_probability * 100);
   const action = deriveAction(customer);
-
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
@@ -479,8 +508,6 @@ function CustomerModal({
             ✕ close
           </button>
         </div>
-
-        {/* Churn probability bar */}
         <div className="modal-sec">
           <div
             style={{
@@ -531,8 +558,6 @@ function CustomerModal({
             />
           </div>
         </div>
-
-        {/* Recommendation — most prominent */}
         <div className="modal-sec">
           <div className="modal-sec-title">Recommended action</div>
           <div className="modal-rec">
@@ -550,8 +575,6 @@ function CustomerModal({
             </div>
           </div>
         </div>
-
-        {/* Plan details */}
         <div className="modal-sec">
           <div className="modal-sec-title">Plan & account</div>
           <div className="modal-grid">
@@ -574,8 +597,6 @@ function CustomerModal({
             ))}
           </div>
         </div>
-
-        {/* SHAP */}
         <div className="modal-sec">
           <div className="modal-sec-title">SHAP churn drivers</div>
           {customer.shap_reasons?.map((r) => (
@@ -640,7 +661,6 @@ function CustomerModal({
   );
 }
 
-// SHAP tooltip
 function ShapTT({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
@@ -739,7 +759,6 @@ function OverviewTab({
         )
       : null;
 
-  // Action badge class
   const actionClass = (c: Customer) => {
     if (c.risk_level === "critical") return "pq-action urgent";
     if (c.risk_level === "high") return "pq-action reach";
@@ -813,7 +832,6 @@ function OverviewTab({
       </div>
 
       <div className="ov-layout">
-        {/* Left column */}
         <div className="ov-left">
           {/* 1. Trend */}
           <div className="ov-panel">
@@ -1000,7 +1018,7 @@ function OverviewTab({
           </div>
         </div>
 
-        {/* Right column — priority queue */}
+        {/* Priority queue */}
         <div className="ov-right">
           <div className="pq-hdr">
             <span className="pq-pt">Priority action queue</span>
@@ -1193,7 +1211,6 @@ function OverviewTab({
                             "—"
                           )}
                         </td>
-                        {/* Action column — derived from recommendation */}
                         <td>
                           <span className={aClass}>{action}</span>
                         </td>
@@ -1211,7 +1228,7 @@ function OverviewTab({
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TAB 1 — CUSTOMER SEARCH
+// TAB 1 — CUSTOMER SEARCH (fixed recommendation + mobile responsive)
 // ════════════════════════════════════════════════════════════════════════════
 function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
   const [query, setQuery] = useState("");
@@ -1222,7 +1239,7 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
   const [page, setPage] = useState(0);
   const PAGE = 15;
 
-  const cClass = (c: string) =>
+  const contractClass = (c: string) =>
     c === "Month-to-month"
       ? "cs-pill cs-m2m"
       : c === "One year"
@@ -1266,6 +1283,7 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
 
   return (
     <div className="cs-root">
+      {/* Toolbar */}
       <div className="cs-header">
         <input
           className="cs-search"
@@ -1320,6 +1338,8 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
           {filtered.length} / {streamCustomers.length}
         </span>
       </div>
+
+      {/* Table */}
       <div className="cs-tbl-wrap">
         {streamCustomers.length === 0 ? (
           <div className="db-empty" style={{ paddingTop: "3rem" }}>
@@ -1341,9 +1361,11 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
                 >
                   Risk{arr("risk")}
                 </th>
-                <th>Contract</th>
+                {/* hidden on ≤420px */}
+                <th className="cs-col-contract">Contract</th>
+                {/* hidden on ≤640px */}
                 <th
-                  className={`s${sortKey === "tenure" ? " active" : ""}`}
+                  className={`s cs-col-tenure${sortKey === "tenure" ? " active" : ""}`}
                   onClick={() => tog("tenure")}
                 >
                   Tenure{arr("tenure")}
@@ -1354,8 +1376,10 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
                 >
                   Monthly £{arr("charges")}
                 </th>
-                <th>Top SHAP driver</th>
-                <th>Recommendation</th>
+                {/* hidden on ≤640px */}
+                <th className="cs-col-shap">SHAP driver</th>
+                {/* always visible — this is the key column */}
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -1364,8 +1388,14 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
                 const q = query.trim().toLowerCase();
                 const id = c.customer_id;
                 const idx = q ? id.toLowerCase().indexOf(q) : -1;
+                const action = deriveAction(c);
+
+                // Pick badge colour class based on risk
+                const badgeClass = `cs-action-badge ${c.risk_level}`;
+
                 return (
                   <tr key={c.customer_id}>
+                    {/* Customer ID — with search highlight */}
                     <td>
                       <span className="cs-id">
                         {idx >= 0 ? (
@@ -1388,24 +1418,36 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
                         )}
                       </span>
                     </td>
+
+                    {/* Risk badge */}
                     <td>
                       <RiskBadge
                         level={c.risk_level}
                         prob={c.churn_probability}
                       />
                     </td>
-                    <td>
-                      <span className={cClass(c.contract)}>{c.contract}</span>
+
+                    {/* Contract pill — hidden ≤420px */}
+                    <td className="cs-col-contract">
+                      <span className={contractClass(c.contract)}>
+                        {c.contract}
+                      </span>
                     </td>
-                    <td>
+
+                    {/* Tenure — hidden ≤640px */}
+                    <td className="cs-col-tenure">
                       <span className="cs-mono">{Math.round(c.tenure)}mo</span>
                     </td>
+
+                    {/* Monthly charges */}
                     <td>
                       <span className="cs-mono">
                         £{c.monthly_charges?.toFixed(2)}
                       </span>
                     </td>
-                    <td>
+
+                    {/* SHAP driver — hidden ≤640px */}
+                    <td className="cs-col-shap">
                       {top ? (
                         <div className="cs-shap">
                           <span className="cs-shap-feat">{top.feature}</span>
@@ -1431,10 +1473,20 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
                         "—"
                       )}
                     </td>
+
+                    {/*
+                      ── ACTION COLUMN — never blank ──
+                      Shows a coloured badge derived from recommendation text or risk level.
+                      On hover shows the full recommendation text as a tooltip.
+                    */}
                     <td>
-                      <span className="cs-rec">
-                        {c.recommendation ? `→ ${c.recommendation}` : "—"}
-                      </span>
+                      <div className="cs-rec-wrap">
+                        <span className={badgeClass}>{action}</span>
+                        {/* Tooltip with full recommendation text */}
+                        {c.recommendation && (
+                          <div className="cs-rec-tip">→ {c.recommendation}</div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1443,6 +1495,8 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
           </table>
         )}
       </div>
+
+      {/* Footer */}
       <div className="cs-footer">
         <span>
           {streamCustomers.length === 0
@@ -1476,10 +1530,8 @@ function SearchTab({ streamCustomers }: { streamCustomers: Customer[] }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TAB 2 — PREDICT (redesigned)
+// TAB 2 — PREDICT
 // ════════════════════════════════════════════════════════════════════════════
-
-// Form field definition
 const FORM_SECTIONS = [
   {
     title: "Personal",
@@ -1605,7 +1657,6 @@ function PredictTab() {
   const [result, setResult] = useState<Customer | null>(null);
   const [loading, setLoad] = useState(false);
   const [error, setError] = useState("");
-
   const setF = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const run = async () => {
@@ -1614,7 +1665,6 @@ function PredictTab() {
     setResult(null);
     try {
       const body: Record<string, string | number> = { ...form };
-      // Convert SeniorCitizen Yes/No → 1/0
       body.SeniorCitizen = form.SeniorCitizen === "Yes" ? 1 : 0;
       ["tenure", "MonthlyCharges", "TotalCharges"].forEach((k) => {
         body[k] = parseFloat(form[k]) || 0;
@@ -1642,13 +1692,11 @@ function PredictTab() {
   return (
     <div className="pred-root">
       <div className="pred-grid">
-        {/* ── Form ── */}
         <div className="pred-form">
           <div className="pred-form-hdr">
             <span className="pred-form-hdr-title">Customer details</span>
             <span className="pred-form-hdr-sub">POST → /predict</span>
           </div>
-
           <div className="pred-body">
             {FORM_SECTIONS.map((section) => (
               <div className="pred-section" key={section.title}>
@@ -1688,7 +1736,6 @@ function PredictTab() {
               </div>
             ))}
           </div>
-
           <div className="pred-submit-area">
             <button className="pred-btn" onClick={run} disabled={loading}>
               {loading ? (
@@ -1703,7 +1750,6 @@ function PredictTab() {
           </div>
         </div>
 
-        {/* ── Result ── */}
         <div className="pred-result">
           <div className="pred-result-hdr">
             <span style={{ fontSize: 12, fontWeight: 700 }}>
@@ -1719,7 +1765,6 @@ function PredictTab() {
                   : "waiting for input…"}
             </span>
           </div>
-
           {!result && !error && !loading && (
             <div className="pred-placeholder">
               <div className="pred-placeholder-icon">⚡</div>
@@ -1733,7 +1778,6 @@ function PredictTab() {
               </div>
             </div>
           )}
-
           {loading && (
             <div className="pred-placeholder">
               <div
@@ -1752,16 +1796,13 @@ function PredictTab() {
               </div>
             </div>
           )}
-
           {error && !loading && (
             <div style={{ padding: "1rem" }}>
               <div className="pred-error">{error}</div>
             </div>
           )}
-
           {result && !loading && (
             <div className="pred-result-body">
-              {/* Score gauge */}
               <div className="pred-score-wrap">
                 <div className="pred-score-num" style={{ color }}>
                   {prob}%
@@ -1796,8 +1837,6 @@ function PredictTab() {
                   </div>
                 </div>
               </div>
-
-              {/* Quick stats */}
               <div
                 style={{
                   display: "grid",
@@ -1847,8 +1886,6 @@ function PredictTab() {
                   </div>
                 ))}
               </div>
-
-              {/* SHAP */}
               <div>
                 <div
                   style={{
@@ -1895,8 +1932,6 @@ function PredictTab() {
                   </div>
                 ))}
               </div>
-
-              {/* Recommendation */}
               {result.recommendation && (
                 <div className="pred-rec-box">
                   <span style={{ fontSize: 16, flexShrink: 0 }}>⚡</span>
@@ -1968,10 +2003,11 @@ export default function Dashboard() {
           if (!seen.current.has(c.customer_id))
             seen.current.set(c.customer_id, c);
         });
-        const sorted = [...seen.current.values()].sort(
-          (a, b) => b.churn_probability - a.churn_probability,
+        setAll(
+          [...seen.current.values()].sort(
+            (a, b) => b.churn_probability - a.churn_probability,
+          ),
         );
-        setAll(sorted);
       })
       .catch(console.error);
   }, []);
@@ -2018,10 +2054,8 @@ export default function Dashboard() {
     <>
       <style>{STYLES}</style>
       <div className="db">
-        {/* Header */}
         <div className="db-hdr">
           <div className="db-hdr-l">
-            {/* Back button → returns to landing page */}
             <button className="db-back" onClick={() => navigate("/")}>
               ← Back
             </button>
@@ -2043,7 +2077,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Tabs */}
         <div className="db-tabs">
           {(["Overview", "Customer search", "Predict customer"] as const).map(
             (label, i) => (
