@@ -359,6 +359,10 @@ export default function HowItWorks() {
               </div>
             </div>
             <button
+              onClick={() =>
+                (window.location.href =
+                  "mailto:shaheer.aslam@icloud.com?subject=ChurnRadar%20Access%20Request&body=Hi%20Shaheer%2C%20I%27d%20like%20to%20request%20access%20to%20ChurnRadar.")
+              }
               className="hiw-btn"
               onMouseEnter={(e) => {
                 e.currentTarget.style.opacity = "0.9";

@@ -208,7 +208,10 @@ export default function Navbar() {
             </a>
           ))}
           <button
-            onClick={close}
+            onClick={() =>
+              (window.location.href =
+                "mailto:shaheer.aslam@icloud.com?subject=ChurnRadar%20Access%20Request&body=Hi%20Shaheer%2C%20I%27d%20like%20to%20request%20access%20to%20ChurnRadar.")
+            }
             style={{
               marginTop: "0.5rem",
               padding: "12px 36px",

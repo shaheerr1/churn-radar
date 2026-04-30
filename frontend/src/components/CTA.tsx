@@ -222,6 +222,10 @@ export default function CTA() {
                 }}
               >
                 <button
+                  onClick={() =>
+                    (window.location.href =
+                      "mailto:shaheer.aslam@icloud.com?subject=ChurnRadar%20Access%20Request&body=Hi%20Shaheer%2C%20I%27d%20like%20to%20request%20access%20to%20ChurnRadar.")
+                  }
                   style={{
                     padding: isMobile ? "14px 20px" : "12px 28px",
                     background: "var(--red)",
@@ -249,6 +253,7 @@ export default function CTA() {
                 </button>
 
                 <button
+                  onClick={() => (window.location.href = "/dashboard")}
                   style={{
                     padding: isMobile ? "14px 20px" : "12px 28px",
                     background: "transparent",
