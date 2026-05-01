@@ -235,7 +235,7 @@ const STYLES = `
   .cs-count{ font-family:monospace;font-size:10px;color:#444;margin-left:auto;flex-shrink:0 }
 
   /* Table wrapper — always horizontally scrollable so content is never clipped */
-  .cs-tbl-wrap{ flex:1;overflow-y:auto;overflow-x:auto;min-height:0;-webkit-overflow-scrolling:touch }
+  .cs-tbl-wrap{ flex:1;overflow-y:auto;overflow-x:auto;min-height:200px;-webkit-overflow-scrolling:touch }
 
   .cs-tbl  { width:100%;border-collapse:collapse;min-width:560px }/* min-width prevents squishing */
   .cs-tbl thead{ position:sticky;top:0;z-index:1 }
@@ -380,7 +380,7 @@ const STYLES = `
     .ov-left  { overflow:visible;height:auto }
     .ov-panel { flex:none;height:220px }
     .ov-right { height:380px }
-    .cs-root  { height:calc(100vh - 120px) }
+    .cs-root  { height:calc(100vh - 140px); min-height:500px }
     .pred-root{ overflow:visible }
     .pred-grid{ grid-template-columns:1fr;height:auto }
     .pred-form{ max-height:none }
@@ -876,7 +876,7 @@ function OverviewTab({
                     />
                     <Tooltip
                       {...TT}
-                      formatter={(v: number) => [`${v}%`, "Churn rate"]}
+                      formatter={(v) => [`${v}%`, "Churn rate"]}
                     />
                     <Line
                       type="monotone"
