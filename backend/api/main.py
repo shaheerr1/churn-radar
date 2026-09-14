@@ -22,7 +22,8 @@ app.add_middleware(
 
 # ── Load dataset once at startup ───────────────────────────────────────────────
 # We load the raw CSV and drop NaNs so every row is usable by the model
-DATA_PATH = "churn.csv"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH = os.path.join(BASE_DIR, "churn.csv")
 
 df_raw = pd.read_csv(DATA_PATH)
 df_raw["TotalCharges"] = pd.to_numeric(df_raw["TotalCharges"], errors="coerce")

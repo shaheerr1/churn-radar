@@ -1979,43 +1979,65 @@ export default function Dashboard() {
   const seen = useRef<Map<string, Customer>>(new Map());
 
   useEffect(() => {
+    let cancelled = false;
     const stamp = () => setLastUpdated(new Date().toLocaleTimeString());
-    fetch(`${API}/summary`)
-      .then((r) => r.json())
-      .then((d) => {
-        setSummary(d);
-        stamp();
-      })
-      .catch(console.error);
-    fetch(`${API}/trend`)
-      .then((r) => r.json())
-      .then((d) => setTrend(d.trend ?? []))
-      .catch(console.error);
-    fetch(`${API}/features`)
-      .then((r) => r.json())
-      .then((d) => setFeatures(d.features ?? []))
-      .catch(console.error);
-    fetch(`${API}/customers?limit=100`)
-      .then((r) => r.json())
-      .then((d) => {
-        const cs: Customer[] = d.customers ?? [];
-        cs.forEach((c) => {
-          if (!seen.current.has(c.customer_id))
-            seen.current.set(c.customer_id, c);
-        });
-        setAll(
-          [...seen.current.values()].sort(
-            (a, b) => b.churn_probability - a.churn_probability,
-          ),
-        );
-      })
-      .catch(console.error);
+
+    // The API sleeps when idle and can take ~a minute to wake up. Retry each
+    // endpoint with backoff so a cold start shows a loading dashboard, not an
+    // empty one.
+    const load = async <T,>(
+      path: string,
+      apply: (d: T) => void,
+      attempt = 0,
+    ): Promise<void> => {
+      try {
+        const r = await fetch(`${API}${path}`);
+        if (!r.ok) throw new Error(String(r.status));
+        const d = (await r.json()) as T;
+        if (!cancelled) apply(d);
+      } catch {
+        if (cancelled || attempt >= 12) return;
+        const wait = Math.min(1000 * 2 ** attempt, 8000);
+        await new Promise((res) => setTimeout(res, wait));
+        return load(path, apply, attempt + 1);
+      }
+    };
+
+    load<Summary>("/summary", (d) => {
+      setSummary(d);
+      stamp();
+    });
+    load<{ trend: TrendPoint[] }>("/trend", (d) => setTrend(d.trend ?? []));
+    load<{ features: Feature[] }>("/features", (d) =>
+      setFeatures(d.features ?? []),
+    );
+    load<{ customers: Customer[] }>("/customers?limit=100", (d) => {
+      const cs: Customer[] = d.customers ?? [];
+      cs.forEach((c) => {
+        if (!seen.current.has(c.customer_id)) seen.current.set(c.customer_id, c);
+      });
+      setAll(
+        [...seen.current.values()].sort(
+          (a, b) => b.churn_probability - a.churn_probability,
+        ),
+      );
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
     const es = new EventSource(`${API}/stream`);
     es.onopen = () => setStreamStatus("live");
-    es.onerror = () => setStreamStatus("error");
+    es.onerror = () => {
+      // EventSource reconnects on its own, so only a closed socket is a real
+      // failure. Everything else is the API still waking up.
+      setStreamStatus(
+        es.readyState === EventSource.CLOSED ? "error" : "connecting",
+      );
+    };
     es.onmessage = (e) => {
       try {
         const c: Customer = JSON.parse(e.data);
@@ -2068,7 +2090,7 @@ export default function Dashboard() {
               {streamStatus === "live"
                 ? "● stream live"
                 : streamStatus === "connecting"
-                  ? "◌ connecting…"
+                  ? "◌ waking backend…"
                   : "✕ stream error"}
             </span>
             {lastUpdated && (
