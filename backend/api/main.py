@@ -8,8 +8,32 @@ import asyncio
 import json
 import os
 import random
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="Churn Radar API")
+
+# ── Startup cache warming ─────────────────────────────────────────────────────
+# /customers and /features each take ~30s on a small shared CPU, and the first
+# visitor after the host spins the instance back up would otherwise sit through
+# it. Warm both in the background instead, after a short delay so the health
+# check answers first and the service is marked live without competing for CPU.
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async def warm():
+        await asyncio.sleep(5)
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(None, lambda: customers_list(100))
+            await loop.run_in_executor(None, feature_importance)
+            print("[startup] caches warm")
+        except Exception as e:
+            print(f"[startup] cache warm failed: {e}")
+
+    task = asyncio.create_task(warm())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="Churn Radar API", lifespan=lifespan)
 
 # ── CORS ───────────────────────────────────────────────────────────────────────
 # Allow all origins so the React dev server on :3000 or :5173 can call us freely
